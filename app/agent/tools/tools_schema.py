@@ -1,4 +1,4 @@
-TOOLS = [
+TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {

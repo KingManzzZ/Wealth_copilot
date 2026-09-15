@@ -1,4 +1,6 @@
-def cal_monthly_cashflow(monthly_income:float, monthly_expense:float):
+def calculate_monthly_cashflow(monthly_income:float, monthly_expense:float):
+
+    print("____________cal函数被执行——————————————————————")
 
     surplus=monthly_income-monthly_expense
 
