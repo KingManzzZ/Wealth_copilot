@@ -65,7 +65,7 @@
 
 ## 4. `POST /api/chat`（SSE 流式）
 
-核心：对接现有 `../backed/agent/agent.py` 的 tool_calls 循环。
+核心：对接现有 `../backed/core/agent/agent.py` 的 tool_calls 循环。
 
 - 请求 body：
 ```json

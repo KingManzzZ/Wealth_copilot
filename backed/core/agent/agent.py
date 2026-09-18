@@ -1,7 +1,6 @@
 import os
-import json
 
-from .tools import tools_schema,tools_route
+from ..tools import tools_route, tools_schema
 from .prompt import SYSTEM_PROMPT
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -59,7 +58,7 @@ def chat_(message):
 
             for tool_call in llm_response.tool_calls:
                 tool_name=tool_call.function.name
-                result=tools_route.route(tool_name, tool_call.function.arguments)
+                result= tools_route.route(tool_name, tool_call.function.arguments)
 
                 send_message.append({
                     "role":"tool",
