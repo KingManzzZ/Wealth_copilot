@@ -13,7 +13,7 @@ import { mockDashboard, mockProfile, mockStreamChat } from "./mock-data"
 // ============================================================
 
 const API_BASE = "/api"
-const HEALTH_TIMEOUT = 2000
+const HEALTH_TIMEOUT = 5000
 
 let cachedBackendStatus: BackendStatus | null = null
 
@@ -29,7 +29,8 @@ export async function pingBackend(): Promise<boolean> {
 }
 
 export async function detectBackendStatus(): Promise<BackendStatus> {
-  if (cachedBackendStatus) return cachedBackendStatus
+  // 只缓存 online；offline 不缓存，下次调用会重新探测，避免首次超时后永远走 mock
+  if (cachedBackendStatus === "online") return cachedBackendStatus
   const ok = await pingBackend()
   cachedBackendStatus = ok ? "online" : "offline"
   return cachedBackendStatus
