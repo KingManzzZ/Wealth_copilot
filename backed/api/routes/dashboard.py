@@ -16,7 +16,7 @@ CASHFLOW = [
 
 # 健康评分：规则化输出（将来可换成真实算法/LLM 评估）
 HEALTH = {
-    "overall": 0
+    "overall": 0 ,
     "grade": "B",
     "dimensions": [
         {"name": "储蓄率", "score": 78, "advice": "储蓄率 47%，高于 30% 的健康线，保持。"},
