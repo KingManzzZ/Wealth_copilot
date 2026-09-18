@@ -4,7 +4,7 @@
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/backed" isTestSource="false" />
     </content>
-    <orderEntry type="jdk" jdkName="E:\miniconda\envs\Wealth_Plan_Agent" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="D:\miniconda\envs\Wealth_Agent_Study" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
