@@ -11,3 +11,7 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+
+.idea/
+
+*.db
