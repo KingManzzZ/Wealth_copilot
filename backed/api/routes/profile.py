@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-PROFILE = PROFILE = { "user_id" : "demo-001" , 
+PROFILE = { "user_id" : "demo-001" ,
                       "name" : "学习者" , 
                       "age" : 29 , 
                       "occupation" : "后端工程师" , 
