@@ -111,9 +111,10 @@ def chat_stream(message, history=None):
                 arguments = {}
             yield {"type": "tool_call", "id": tool["id"], "name": tool["name"], "arguments": arguments}
 
-            origin_result=tools_route.route(tool["name"], arguments)
+            origin_result=tools_route.route(tool["name"], tool["arguments"])
             result = json.loads(origin_result)
-            yield {"type": "tool_result", "id": tool["id"], "name": tool["name"], "result": result}
+            status="error" if isinstance(result,dict) and "error" in result else "success"
+            yield {"type": "tool_result", "id": tool["id"], "result": result, "status": status}
 
             messages.append({
                 "role": "tool",
