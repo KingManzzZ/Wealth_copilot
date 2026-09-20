@@ -17,7 +17,7 @@ const DEFAULT_WIDTH = 400
  * 由聊天面板头部右上角的按钮切换。
  */
 export function AppShell() {
-  const [chatSide, setChatSide] = useState<ChatSide>("left")
+  const [chatSide, setChatSide] = useState<ChatSide>("right")
   const [chatWidth, setChatWidth] = useState(DEFAULT_WIDTH)
   const isDragging = useRef(false)
   const startX = useRef(0)
