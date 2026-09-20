@@ -26,6 +26,22 @@ export interface ChatMessage {
 }
 
 /**
+ * 发给后端的历史消息：对齐 OpenAI Chat Completions 格式
+ * - assistant 带 tool_calls 时，其后必须紧跟对应数量的 tool 消息
+ * - tool_calls[].function.arguments 是 JSON 字符串
+ */
+export interface HistoryToolCall {
+  id: string
+  type: "function"
+  function: { name: string; arguments: string }
+}
+
+export type HistoryMessage =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string; tool_calls?: HistoryToolCall[] }
+  | { role: "tool"; content: string; tool_call_id: string }
+
+/**
  * SSE 流式事件协议（与后端约定）
  * 每个事件以 `data: <JSON>\n\n` 形式下发
  */

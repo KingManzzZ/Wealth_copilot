@@ -2,6 +2,7 @@ import type {
   BackendStatus,
   ChatStreamEvent,
   DashboardData,
+  HistoryMessage,
   UserProfile,
 } from "@/types"
 import { mockDashboard, mockProfile, mockStreamChat } from "./mock-data"
@@ -59,7 +60,7 @@ export async function getDashboard(): Promise<DashboardData> {
  */
 export async function* streamChat(
   message: string,
-  history: { role: string; content: string }[]
+  history: HistoryMessage[]
 ): AsyncGenerator<ChatStreamEvent> {
   const online = await detectBackendStatus()
 

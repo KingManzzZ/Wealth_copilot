@@ -118,7 +118,7 @@ function CountUp({
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [value, delay])
+  }, [value, delay, format])
 
   return (
     <span className="text-[26px] font-semibold leading-none tracking-tight tabular-nums">

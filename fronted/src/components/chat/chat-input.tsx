@@ -1,22 +1,28 @@
-import { useEffect, useRef, useState } from "react"
-import type { KeyboardEvent } from "react"
+import { useEffect } from "react"
+import type { KeyboardEvent, RefObject } from "react"
 import { Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface ChatInputProps {
-  onSend: (text: string) => void
+  value: string
+  onChange: (v: string) => void
+  onSend: () => void
   disabled: boolean
+  /** 外部传入的 textarea ref，供父组件聚焦/操作光标 */
+  textareaRef: RefObject<HTMLTextAreaElement | null>
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
-  const [value, setValue] = useState("")
-  const ref = useRef<HTMLTextAreaElement>(null)
-
+export function ChatInput({
+  value,
+  onChange,
+  onSend,
+  disabled,
+  textareaRef,
+}: ChatInputProps) {
   const submit = () => {
     const trimmed = value.trim()
     if (!trimmed || disabled) return
-    onSend(trimmed)
-    setValue("")
+    onSend()
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -28,18 +34,18 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
 
   // 自适应高度
   useEffect(() => {
-    const el = ref.current
+    const el = textareaRef.current
     if (!el) return
     el.style.height = "auto"
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`
-  }, [value])
+  }, [value, textareaRef])
 
   return (
     <div className="flex items-end gap-2 rounded-xl border border-border/60 bg-card p-1.5 shadow-soft transition-shadow duration-300 focus-within:shadow-lift focus-within:ring-2 focus-within:ring-ring/35">
       <textarea
-        ref={ref}
+        ref={textareaRef}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         rows={1}
         placeholder="问 WealthPilot…（Enter 发送，Shift+Enter 换行）"

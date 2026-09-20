@@ -1,8 +1,62 @@
 import { useCallback, useRef, useState } from "react"
 import { streamChat } from "@/lib/api"
-import type { ChatMessage, ChatStreamEvent, ToolCall } from "@/types"
+import type {
+  ChatMessage,
+  ChatStreamEvent,
+  HistoryMessage,
+  ToolCall,
+} from "@/types"
 
 const uid = () => Math.random().toString(36).slice(2, 11)
+
+/**
+ * 把前端的 ChatMessage 列表还原成后端需要的 OpenAI 格式历史消息：
+ * - user → { role: "user", content }
+ * - assistant → { role: "assistant", content, tool_calls? }
+ *   每个有 result 的 toolCall 紧跟一条 { role: "tool", content, tool_call_id }
+ */
+function buildHistory(messages: ChatMessage[]): HistoryMessage[] {
+  const history: HistoryMessage[] = []
+  for (const m of messages) {
+    if (m.role === "user") {
+      history.push({ role: "user", content: m.content })
+    } else if (m.role === "assistant") {
+      const calls = m.toolCalls ?? []
+      const tool_calls = calls
+        .filter((tc) => tc.name)
+        .map((tc) => ({
+          id: tc.id,
+          type: "function" as const,
+          function: {
+            name: tc.name,
+            arguments: JSON.stringify(tc.arguments ?? {}),
+          },
+        }))
+      const assistantMsg: HistoryMessage = {
+        role: "assistant",
+        content: m.content,
+      }
+      if (tool_calls.length) {
+        assistantMsg.tool_calls = tool_calls
+      }
+      history.push(assistantMsg)
+
+      for (const tc of calls) {
+        if (tc.result !== undefined) {
+          history.push({
+            role: "tool",
+            content:
+              typeof tc.result === "string"
+                ? tc.result
+                : JSON.stringify(tc.result),
+            tool_call_id: tc.id,
+          })
+        }
+      }
+    }
+  }
+  return history
+}
 
 /**
  * 聊天状态管理 hook
@@ -39,10 +93,7 @@ export function useChat() {
     }
     assistantIdRef.current = assistantMsg.id
 
-    const history = messagesRef.current.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }))
+    const history = buildHistory(messagesRef.current)
 
     syncRef([...messagesRef.current, userMsg, assistantMsg])
     setIsStreaming(true)
@@ -63,13 +114,24 @@ export function useChat() {
           m.id === assistantIdRef.current
             ? {
                 ...m,
-                content:
-                  m.content + `\n\n[错误] ${(e as Error).message}`,
+                content: m.content + `\n\n[错误] ${(e as Error).message}`,
               }
             : m
         )
       )
     } finally {
+      // 若流在产出任何事件前就失败，assistant 消息既无内容也无工具调用，
+      // 只可能残留一个空壳（错误已在 catch 追加到 content）。
+      // 如果连错误都没留下（极端情况），移除这条空消息避免 typing 指示器常驻。
+      const current = messagesRef.current
+      const assistant = current.find((m) => m.id === assistantIdRef.current)
+      if (
+        assistant &&
+        !assistant.content &&
+        (!assistant.toolCalls || assistant.toolCalls.length === 0)
+      ) {
+        syncRef(current.filter((m) => m.id !== assistantIdRef.current))
+      }
       setIsStreaming(false)
       assistantIdRef.current = null
     }

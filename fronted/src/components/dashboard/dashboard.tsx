@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
+import { AlertTriangle, RefreshCw } from "lucide-react"
 import { getDashboard } from "@/lib/api"
 import type { DashboardData } from "@/types"
 import { KpiOverview } from "./kpi-overview"
@@ -6,14 +7,26 @@ import { CashflowChart } from "./cashflow-chart"
 import { GoalsProgress } from "./goals-progress"
 import { AssetLiability } from "./asset-liability"
 import { HealthScore } from "./health-score"
+import { Button } from "@/components/ui/button"
 
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    getDashboard().then(setData)
+  const load = useCallback(() => {
+    setError(null)
+    getDashboard()
+      .then(setData)
+      .catch((e) => {
+        setError((e as Error).message)
+      })
   }, [])
 
+  useEffect(() => {
+    load()
+  }, [load])
+
+  if (error) return <DashboardError message={error} onRetry={load} />
   if (!data) return <DashboardSkeleton />
 
   return (
@@ -36,6 +49,32 @@ export function Dashboard() {
             <AssetLiability items={data.asset_liability} />
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function DashboardError({
+  message,
+  onRetry,
+}: {
+  message: string
+  onRetry: () => void
+}) {
+  return (
+    <div className="flex flex-1 items-center justify-center p-7">
+      <div className="flex max-w-sm flex-col items-center gap-4 rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+          <AlertTriangle className="h-6 w-6" />
+        </span>
+        <div className="space-y-1">
+          <p className="text-sm font-medium">仪表盘数据加载失败</p>
+          <p className="text-xs text-muted-foreground">{message}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          <RefreshCw className="h-3.5 w-3.5" />
+          重试
+        </Button>
       </div>
     </div>
   )
