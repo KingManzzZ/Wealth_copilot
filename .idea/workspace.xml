@@ -6,6 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="5a7aa9ce-d6e4-4dc8-be73-27e86c98e1a5" name="更改" comment="增添工具状态status字段，工具路由传参需要json字符串，修复因参数问题导致的前端白屏">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/infrastructure/database/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/core/database/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/infrastructure/database/_first.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/core/database/_first.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -72,11 +74,11 @@
 }</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="E:\Python_Projects\Agent_study\backend\core" />
       <recent name="E:\Python_Projects\Agent_study\backed\infrustructions" />
       <recent name="E:\Python_Projects\Agent_study\backed\core" />
       <recent name="E:\Python_Projects\Agent_study\app\agent\tools\tools_hub" />
       <recent name="E:\Python_Projects\Agent_study\app\agent" />
-      <recent name="E:\Python_Projects\Agent_study\app" />
     </key>
   </component>
   <component name="RunManager" selected="Python._first">

@@ -16,8 +16,8 @@ OWNER_ID: int = 1
 # ---------------------------------------------------------------------------
 # 路径
 # ---------------------------------------------------------------------------
-BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH: str = os.path.join(BASE_DIR, "data", "data.db")
+BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DB_PATH: str = os.path.join(BASE_DIR, "infrastructure", "data", "data.db")
 
 
 def get_connection() -> sqlite3.Connection:
