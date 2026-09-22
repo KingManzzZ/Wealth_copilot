@@ -1,8 +1,6 @@
 import os
 import json
 
-from click import argument
-
 from ..tools import tools_route, tools_schema
 from .prompt import SYSTEM_PROMPT
 

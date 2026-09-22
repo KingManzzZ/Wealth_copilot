@@ -6,9 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="5a7aa9ce-d6e4-4dc8-be73-27e86c98e1a5" name="更改" comment="增添工具状态status字段，工具路由传参需要json字符串，修复因参数问题导致的前端白屏">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backed/infrustructions/database/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/backed/infrustructions/database/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backed/infrustructions/database/_first.py" beforeDir="false" afterPath="$PROJECT_DIR$/backed/infrustructions/database/_first.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
