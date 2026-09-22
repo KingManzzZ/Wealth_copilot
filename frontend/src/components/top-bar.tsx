@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Activity, Circle, RefreshCw } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
 import { detectBackendStatus } from "@/lib/api"
 import type { BackendStatus } from "@/types"
@@ -36,7 +37,7 @@ export function TopBar() {
   }, [status, refresh])
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-border/50 bg-background/60 px-6 backdrop-blur-xl">
+    <header className="relative z-30 flex h-16 shrink-0 items-center justify-between border-b border-border/50 bg-background/60 px-6 backdrop-blur-xl">
       <div className="flex items-center gap-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-soft">
           <Activity className="h-4 w-4" />
@@ -54,6 +55,7 @@ export function TopBar() {
       <div className="flex items-center gap-2">
         <BackendIndicator status={status} refreshing={refreshing} onRetry={refresh} />
         <ThemeToggle />
+        <UserMenu />
       </div>
     </header>
   )

@@ -59,7 +59,13 @@ export interface UserProfile {
   user_id: string
   name?: string
   age?: number
+  /** 所在城市 */
+  city?: string
   occupation?: string
+  /** 所属行业 */
+  industry?: string
+  /** 教育程度 */
+  education?: string
   family?: string
   monthly_income?: number
   monthly_expense?: number
@@ -67,6 +73,16 @@ export interface UserProfile {
   debts: Record<string, { remaining: number; monthly_payment: number }>
   goals: FinancialGoal[]
   risk_tolerance?: "conservative" | "balanced" | "aggressive"
+  /** 投资年限（年） */
+  investing_years?: number
+  /** 流动性需求 */
+  liquidity_needs?: "low" | "medium" | "high"
+  /** 婚姻状况 */
+  marital_status?: string
+  /** 子女情况 */
+  children?: string
+  /** 赡养父母情况 */
+  supporting_parents?: string
   last_updated?: string
 }
 

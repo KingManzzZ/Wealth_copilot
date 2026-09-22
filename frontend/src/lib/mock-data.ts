@@ -14,7 +14,10 @@ export const mockProfile: UserProfile = {
   user_id: "demo-001",
   name: "学习者",
   age: 29,
+  city: "上海",
   occupation: "后端工程师",
+  industry: "互联网",
+  education: "硕士",
   family: "单身",
   monthly_income: 18000,
   monthly_expense: 9500,
@@ -53,6 +56,10 @@ export const mockProfile: UserProfile = {
     },
   ],
   risk_tolerance: "balanced",
+  investing_years: 5,
+  liquidity_needs: "medium",
+  marital_status: "未婚",
+  // 子女 / 赡养父母情况未提供：用于演示「待确认项」
   last_updated: "2026-09-16",
 }
 
