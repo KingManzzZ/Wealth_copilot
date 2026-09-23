@@ -2,7 +2,7 @@ import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import type { ChatMessage } from "@/types"
 import { InlineMarkdown } from "./inline-markdown"
-import { ToolCallCard } from "./tool-call-card"
+import { ToolCallGroup } from "./tool-call-card"
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user"
@@ -31,9 +31,9 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         </div>
       )}
 
-      {message.toolCalls?.map((tc) => (
-        <ToolCallCard key={tc.id} toolCall={tc} />
-      ))}
+      {message.toolCalls && message.toolCalls.length > 0 && (
+        <ToolCallGroup toolCalls={message.toolCalls} />
+      )}
     </div>
   )
 }
