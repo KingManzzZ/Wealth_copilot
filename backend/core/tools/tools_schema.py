@@ -25,7 +25,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "update_basic_info",
-            "description": "更新基本信息字段（仅 basic_info 表的字段；assets/debts/goals 走各自工具）。",
+            "description": "更新基本信息字段（仅 basic_info 表的用户可编辑字段；assets/debts/goals 走各自工具）。risk_tolerance / investment_preference / liquidity_needs 为算法估算字段，不可通过此工具修改。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -39,17 +39,7 @@ TOOLS_SCHEMA = [
                     "marital_status": {"type": "string", "description": "婚姻状况"},
                     "children": {"type": "string", "description": "子女情况"},
                     "supporting_parents": {"type": "string", "description": "赡养父母情况"},
-                    "risk_tolerance": {
-                        "type": "string",
-                        "enum": ["conservative", "balanced", "aggressive"],
-                        "description": "风险等级",
-                    },
                     "investing_years": {"type": "number", "description": "投资年限"},
-                    "liquidity_needs": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"],
-                        "description": "活期现金需求",
-                    },
                 },
                 "required": [],
             },

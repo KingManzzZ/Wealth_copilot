@@ -54,9 +54,10 @@
 | `industry` | string | 所属行业 | `"互联网"` |
 | `education` | string | 教育程度（自由文本） | `"硕士"` |
 | `family` | string | 家庭状况（综合性描述） | `"单身"` |
-| `risk_tolerance` | enum | 风险等级 | `"balanced"` |
+| `risk_tolerance` | enum | 风险承受能力（算法估算，不可用户修改） | `"balanced"` |
+| `investment_preference` | enum | 投资偏好（算法估算，不可用户修改） | `"balanced"` |
 | `investing_years` | number | 投资年限（年） | `5` |
-| `liquidity_needs` | enum | 活期现金需求 | `"medium"` |
+| `liquidity_needs` | enum | 活期现金需求（算法估算，不可用户修改） | `"medium"` |
 | `marital_status` | string | 婚姻状况 | `"未婚"` |
 | `children` | string | 子女情况 | `"暂无"` |
 | `supporting_parents` | string | 赡养父母情况 | `"需赡养父母一方"` |
@@ -128,13 +129,23 @@
 
 ### 2.8 枚举值与量化标准
 
-**`risk_tolerance` 风险等级**：
+> **算法估算字段**：`risk_tolerance` / `investment_preference` / `liquidity_needs` 三个字段由系统算法自动估算，用户不可通过 tool 或前端修改。
+
+**`risk_tolerance` 风险承受能力**：
 
 | 取值 | 展示文案 | 量化标准 |
 |---|---|---|
 | `conservative` | 保守型 | 权益类资产占比 ≤ 20%，可承受最大回撤约 10% |
 | `balanced` | 平衡型 | 权益类资产占比 40%~60%，可承受最大回撤约 20% |
 | `aggressive` | 进取型 | 权益类资产占比 ≥ 70%，可承受最大回撤约 30% |
+
+**`investment_preference` 投资偏好**：
+
+| 取值 | 展示文案 | 量化标准 |
+|---|---|---|
+| `conservative` | 保守型 | 偏好固定收益类，权益类占比 ≤ 30% |
+| `balanced` | 平衡型 | 均衡配置，权益类占比 30%~60% |
+| `aggressive` | 进取型 | 偏好成长型，权益类占比 ≥ 60% |
 
 **`liquidity_needs` 活期现金需求**：
 
@@ -208,3 +219,4 @@ UNIQUE 约束：
 | 2026-09-22 | v0.2 | 按 TODO 对齐实现：路由接入 service 层（GET/POST/PATCH），service 补齐 8 个新字段与 12 项完善度清单，dashboard 改从 service 取数，前端契约示例同步 |
 | 2026-09-22 | v0.3 | `financial_profiles` 表结构对齐契约：移除遗留列 `income_stability`，冗余列 `risk_preference` 更名 `risk_tolerance`（与 JSON 字段同名），DDL 补 NOT NULL 约束 |
 | 2026-09-23 | v0.4 | **全表拆分重构**：废弃 `financial_profiles.profile_data` JSON 单列设计，按关系建模拆为 6 张独立表（basic_info / assets / debts / goals / monthly_cashflow / transactions）；废弃 `/api/profile` 聚合端点，按子资源拆为 6 组 RESTful 端点；`monthly_income`/`monthly_expense` 不再存为字段，由 `monthly_cashflow` 派生；每张表预埋 `user_id` 列；dashboard 改为从子 service 聚合数据，删除硬编码 CASHFLOW |
+| 2026-09-23 | v0.5 | **算法字段隔离**：`risk_tolerance` 更名展示为"风险承受能力"；新增 `investment_preference`（投资偏好）列；`risk_tolerance`/`investment_preference`/`liquidity_needs` 三个字段标记为算法估算，从 `BASIC_INFO_FIELDS` 可写白名单和 `update_basic_info` tool 参数中移除；前端 ProfileCard 实现行内编辑（可编辑字段点击直接修改），三个算法字段只读展示 |

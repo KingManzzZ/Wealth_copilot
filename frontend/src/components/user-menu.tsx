@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { AlertCircle, BadgeCheck, ChevronDown, HelpCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -8,10 +8,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { getBasicInfo } from "@/lib/api"
+import { getBasicInfo, upsertBasicInfo } from "@/lib/api"
 import {
   LIQUIDITY_LABELS,
+  PREFERENCE_LABELS,
   RISK_LABELS,
+  getInvestmentPreferenceHint,
   getLiquidityHint,
   getPendingConfirmations,
   getProfileCompletion,
@@ -20,12 +22,15 @@ import {
 import { cn, formatPercent } from "@/lib/utils"
 import type { BasicInfo } from "@/types"
 
+/** 数值型字段：保存时需转 number */
+const NUMERIC_FIELDS = new Set<string>(["age", "investing_years"])
+
 /**
  * 顶栏右上角头像：点击弹出个人资料卡
  * - 基本信息 / 投资画像 / 家庭情况 三组字段
+ * - 用户可点击字段值直接行内编辑（算法字段除外）
+ * - 风险承受能力 / 投资偏好 / 活期现金需求 为算法估算字段，只读展示
  * - 底部展示资料完整度与待确认项
- * 后端不在线时由 getBasicInfo 自动降级到 mock 数据
- * （monthly_income/monthly_expense 已从 cashflow 派生，不再属于 BasicInfo）
  */
 export function UserMenu() {
   const [open, setOpen] = useState(false)
@@ -36,6 +41,19 @@ export function UserMenu() {
     getBasicInfo()
       .then(setBasicInfo)
       .catch(() => {})
+  }, [])
+
+  // 行内编辑保存：调 upsertBasicInfo → 成功刷新 state，失败保持原值
+  const handleSave = useCallback(async (field: keyof BasicInfo, value: string) => {
+    const payload: Partial<BasicInfo> = {
+      [field]: NUMERIC_FIELDS.has(field as string) ? Number(value) || 0 : value,
+    } as Partial<BasicInfo>
+    try {
+      const updated = await upsertBasicInfo(payload)
+      setBasicInfo(updated)
+    } catch (e) {
+      console.error("保存失败:", e)
+    }
   }, [])
 
   // 展开时：点击外部或按 Esc 关闭
@@ -94,7 +112,7 @@ export function UserMenu() {
             className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[21rem] overflow-hidden rounded-xl border border-border/70 bg-popover/95 shadow-lift backdrop-blur-xl"
           >
             {basicInfo ? (
-              <ProfileCard info={basicInfo} />
+              <ProfileCard info={basicInfo} onSave={handleSave} />
             ) : (
               <div className="px-4 py-6 text-center text-xs text-muted-foreground">
                 资料加载中…
@@ -107,7 +125,13 @@ export function UserMenu() {
   )
 }
 
-function ProfileCard({ info }: { info: BasicInfo }) {
+function ProfileCard({
+  info,
+  onSave,
+}: {
+  info: BasicInfo
+  onSave: (field: keyof BasicInfo, value: string) => void
+}) {
   const { filled, total, ratio } = getProfileCompletion(info)
   const pending = getPendingConfirmations(info)
 
@@ -141,36 +165,46 @@ function ProfileCard({ info }: { info: BasicInfo }) {
 
       {/* 基本信息 */}
       <Section title="基本信息">
-        <InfoRow label="年龄" value={info.age ? `${info.age} 岁` : undefined} />
-        <InfoRow label="城市" value={info.city} />
-        <InfoRow label="职业" value={info.occupation} />
-        <InfoRow label="行业" value={info.industry} />
-        <InfoRow label="教育程度" value={info.education} />
+        <InfoRow label="姓名" display={info.name} rawValue={info.name} editable onSave={(v) => onSave("name", v)} />
+        <InfoRow label="年龄" display={info.age ? `${info.age} 岁` : undefined} rawValue={info.age ? String(info.age) : ""} editable inputType="number" onSave={(v) => onSave("age", v)} />
+        <InfoRow label="城市" display={info.city} rawValue={info.city} editable onSave={(v) => onSave("city", v)} />
+        <InfoRow label="职业" display={info.occupation} rawValue={info.occupation} editable onSave={(v) => onSave("occupation", v)} />
+        <InfoRow label="行业" display={info.industry} rawValue={info.industry} editable onSave={(v) => onSave("industry", v)} />
+        <InfoRow label="教育程度" display={info.education} rawValue={info.education} editable onSave={(v) => onSave("education", v)} />
       </Section>
 
       {/* 投资画像 */}
       <Section title="投资画像">
         <InfoRow
-          label="风险等级"
-          value={info.risk_tolerance ? RISK_LABELS[info.risk_tolerance] : undefined}
+          label="风险承受能力"
+          display={info.risk_tolerance ? RISK_LABELS[info.risk_tolerance] : undefined}
           hint={getRiskHint(info)}
         />
         <InfoRow
+          label="投资偏好"
+          display={info.investment_preference ? PREFERENCE_LABELS[info.investment_preference] : undefined}
+          hint={getInvestmentPreferenceHint(info)}
+        />
+        <InfoRow
           label="投资年限"
-          value={info.investing_years ? `${info.investing_years} 年` : undefined}
+          display={info.investing_years ? `${info.investing_years} 年` : undefined}
+          rawValue={info.investing_years ? String(info.investing_years) : ""}
+          editable
+          inputType="number"
+          onSave={(v) => onSave("investing_years", v)}
         />
         <InfoRow
           label="活期现金需求"
-          value={info.liquidity_needs ? LIQUIDITY_LABELS[info.liquidity_needs] : undefined}
+          display={info.liquidity_needs ? LIQUIDITY_LABELS[info.liquidity_needs] : undefined}
           hint={getLiquidityHint(info)}
         />
       </Section>
 
       {/* 家庭情况 */}
       <Section title="家庭情况">
-        <InfoRow label="婚姻" value={info.marital_status} />
-        <InfoRow label="子女" value={info.children} />
-        <InfoRow label="赡养父母" value={info.supporting_parents} />
+        <InfoRow label="婚姻" display={info.marital_status} rawValue={info.marital_status} editable onSave={(v) => onSave("marital_status", v)} />
+        <InfoRow label="子女" display={info.children} rawValue={info.children} editable onSave={(v) => onSave("children", v)} />
+        <InfoRow label="赡养父母" display={info.supporting_parents} rawValue={info.supporting_parents} editable onSave={(v) => onSave("supporting_parents", v)} />
       </Section>
 
       {/* 底部：完善度 + 待确认项 */}
@@ -215,17 +249,94 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-function InfoRow({ label, value, hint }: { label: string; value?: string; hint?: string }) {
+/**
+ * 信息行：支持只读和可编辑两种模式。
+ * - editable + onSave：点击值区域进入行内编辑，Enter/blur 保存，Escape 取消
+ * - 非 editable：纯展示（用于算法字段）
+ */
+function InfoRow({
+  label,
+  display,
+  rawValue,
+  hint,
+  editable,
+  inputType = "text",
+  onSave,
+}: {
+  label: string
+  display?: string
+  rawValue?: string
+  hint?: string
+  editable?: boolean
+  inputType?: "text" | "number"
+  onSave?: (value: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(rawValue ?? "")
+
+  // 非编辑态时同步外部值变更
+  useEffect(() => {
+    if (!editing) setDraft(rawValue ?? "")
+  }, [rawValue, editing])
+
+  const startEdit = () => {
+    if (!editable) return
+    setDraft(rawValue ?? "")
+    setEditing(true)
+  }
+
+  const cancel = () => {
+    setDraft(rawValue ?? "")
+    setEditing(false)
+  }
+
+  const save = () => {
+    setEditing(false)
+    const trimmed = draft.trim()
+    if (trimmed !== (rawValue ?? "").trim()) {
+      onSave?.(trimmed)
+    }
+  }
+
   return (
     <div className="flex items-center justify-between gap-3 py-[3px]">
       <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
         {label}
         {hint && <HintIcon content={hint} />}
       </span>
-      {value ? (
-        <span className="truncate text-xs font-medium">{value}</span>
+      {editing ? (
+        <input
+          autoFocus
+          type={inputType}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save()
+            if (e.key === "Escape") cancel()
+          }}
+          onBlur={save}
+          className="w-32 rounded border border-border bg-background px-1.5 py-0.5 text-right text-xs outline-none focus:border-primary"
+        />
+      ) : display ? (
+        <span
+          className={cn(
+            "truncate rounded px-1 text-xs font-medium transition-colors",
+            editable && "-mx-1 cursor-pointer hover:bg-accent/40"
+          )}
+          onClick={editable ? startEdit : undefined}
+        >
+          {display}
+        </span>
       ) : (
-        <span className="text-xs text-muted-foreground/60">待确认</span>
+        <span
+          className={cn(
+            "rounded px-1 text-xs text-muted-foreground/60 transition-colors",
+            editable && "-mx-1 cursor-pointer hover:bg-accent/40"
+          )}
+          onClick={editable ? startEdit : undefined}
+        >
+          {editable ? "点击编辑" : "待评估"}
+        </span>
       )}
     </div>
   )

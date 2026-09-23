@@ -26,6 +26,7 @@ export const mockBasicInfo: BasicInfo = {
   education: "硕士",
   family: "单身",
   risk_tolerance: "balanced",
+  investment_preference: "balanced",
   investing_years: 5,
   liquidity_needs: "medium",
   marital_status: "未婚",

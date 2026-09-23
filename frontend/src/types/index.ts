@@ -74,6 +74,8 @@ export interface BasicInfo {
   education?: string
   family?: string
   risk_tolerance?: "conservative" | "balanced" | "aggressive"
+  /** 投资偏好（算法估算，不可用户修改） */
+  investment_preference?: "conservative" | "balanced" | "aggressive"
   /** 投资年限（年） */
   investing_years?: number
   /** 流动性需求 */

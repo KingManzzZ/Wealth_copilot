@@ -5,11 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="5a7aa9ce-d6e4-4dc8-be73-27e86c98e1a5" name="更改" comment="增添工具状态status字段，工具路由传参需要json字符串，修复因参数问题导致的前端白屏">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/core/tools/WealthPilot_Tool清单.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/core/tools/WealthPilot_Tool清单.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/core/tools/tools_hub/asset_tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/core/tools/tools_hub/asset_tools.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/core/tools/tools_hub/debt_tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/core/tools/tools_hub/debt_tools.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/core/tools/tools_schema.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/core/tools/tools_schema.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

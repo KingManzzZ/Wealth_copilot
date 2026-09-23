@@ -35,6 +35,7 @@ SCHEMA_SQL: str = """
             children             TEXT    NOT NULL DEFAULT '',
             supporting_parents   TEXT    NOT NULL DEFAULT '',
             risk_tolerance       TEXT    NOT NULL DEFAULT '',
+            investment_preference TEXT   NOT NULL DEFAULT '',
             investing_years      NUMERIC NOT NULL DEFAULT 0,
             liquidity_needs      TEXT    NOT NULL DEFAULT '',
             created_at           TEXT    NOT NULL DEFAULT (datetime('now')),

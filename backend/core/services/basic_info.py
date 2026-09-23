@@ -9,7 +9,8 @@ monthly_income/monthly_expense 不再存为字段，由 cashflow service 派生�
 from core.database import get_connection
 from core.services._common import OWNER_ID, _now, _sanitize, _is_filled
 
-# 基本信息表可写字段（与前端 BasicInfo 契约对齐）
+# 基本信息表可写字段（用户可编辑；与前端 BasicInfo 契约对齐）
+# risk_tolerance / investment_preference / liquidity_needs 为算法估算字段，不可用户修改
 BASIC_INFO_FIELDS: tuple[str, ...] = (
     "name",
     "age",
@@ -21,12 +22,10 @@ BASIC_INFO_FIELDS: tuple[str, ...] = (
     "marital_status",
     "children",
     "supporting_parents",
-    "risk_tolerance",
     "investing_years",
-    "liquidity_needs",
 )
 
-# 资料完善度清单（10 项，移除了原 monthly_income/monthly_expense）
+# 资料完善度清单（含算法字段，共 12 项）
 COMPLETION_FIELDS: tuple[str, ...] = (
     "name",
     "age",
@@ -35,6 +34,7 @@ COMPLETION_FIELDS: tuple[str, ...] = (
     "industry",
     "education",
     "risk_tolerance",
+    "investment_preference",
     "investing_years",
     "liquidity_needs",
     "marital_status",
@@ -58,6 +58,7 @@ def _default_basic_info() -> dict:
         "children": "",
         "supporting_parents": "",
         "risk_tolerance": "",
+        "investment_preference": "",
         "investing_years": 0,
         "liquidity_needs": "",
         "last_updated": "",
@@ -79,6 +80,7 @@ def _row_to_dict(row) -> dict:
         "children": row["children"],
         "supporting_parents": row["supporting_parents"],
         "risk_tolerance": row["risk_tolerance"],
+        "investment_preference": row["investment_preference"],
         "investing_years": row["investing_years"],
         "liquidity_needs": row["liquidity_needs"],
         "last_updated": row["updated_at"],

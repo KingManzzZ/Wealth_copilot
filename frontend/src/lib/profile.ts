@@ -6,13 +6,16 @@ import type { BasicInfo } from "@/types"
 // 移除了原 monthly_income/monthly_expense（已从 cashflow 派生，不再属于 basic_info）
 // ============================================================
 
-/** 风险承受能力等级 */
+/** 风险承受能力等级（算法估算，不可用户修改） */
 export type RiskLevel = NonNullable<BasicInfo["risk_tolerance"]>
 
-/** 活期现金需求等级 */
+/** 投资偏好等级（算法估算，不可用户修改） */
+export type InvestmentPreferenceLevel = NonNullable<BasicInfo["investment_preference"]>
+
+/** 活期现金需求等级（算法估算，不可用户修改） */
 export type LiquidityLevel = NonNullable<BasicInfo["liquidity_needs"]>
 
-/** 个人资料清单：用于完善度统计与待确认项推导（10 项，移除了 monthly_income/expense） */
+/** 个人资料清单：用于完善度统计与待确认项推导（13 项，含 3 个算法字段） */
 export const PROFILE_CHECKLIST: { key: keyof BasicInfo; label: string }[] = [
   { key: "name", label: "姓名" },
   { key: "age", label: "年龄" },
@@ -20,7 +23,8 @@ export const PROFILE_CHECKLIST: { key: keyof BasicInfo; label: string }[] = [
   { key: "occupation", label: "职业" },
   { key: "industry", label: "行业" },
   { key: "education", label: "教育程度" },
-  { key: "risk_tolerance", label: "风险等级" },
+  { key: "risk_tolerance", label: "风险承受能力" },
+  { key: "investment_preference", label: "投资偏好" },
   { key: "investing_years", label: "投资年限" },
   { key: "liquidity_needs", label: "活期现金需求" },
   { key: "marital_status", label: "婚姻状况" },
@@ -35,11 +39,25 @@ export const RISK_LABELS: Record<RiskLevel, string> = {
   aggressive: "进取型",
 }
 
-/** 风险等级量化标准：权益类资产占比与最大回撤容忍 */
+/** 风险承受能力量化标准：权益类资产占比与最大回撤容忍 */
 export const RISK_QUANTIFIED: Record<RiskLevel, string> = {
   conservative: "权益类资产占比 ≤ 20%，可承受最大回撤约 10%",
   balanced: "权益类资产占比 40%~60%，可承受最大回撤约 20%",
   aggressive: "权益类资产占比 ≥ 70%，可承受最大回撤约 30%",
+}
+
+/** 投资偏好展示文案 */
+export const PREFERENCE_LABELS: Record<InvestmentPreferenceLevel, string> = {
+  conservative: "保守型",
+  balanced: "平衡型",
+  aggressive: "进取型",
+}
+
+/** 投资偏好量化标准：主观投资风格倾向 */
+export const PREFERENCE_QUANTIFIED: Record<InvestmentPreferenceLevel, string> = {
+  conservative: "偏好固定收益类，权益类占比 ≤ 30%",
+  balanced: "均衡配置，权益类占比 30%~60%",
+  aggressive: "偏好成长型，权益类占比 ≥ 60%",
 }
 
 /** 活期现金需求展示文案 */
@@ -82,17 +100,24 @@ export function getPendingConfirmations(info: BasicInfo): string[] {
   )
 }
 
-/** 风险等级量化提示：供「?」悬浮展示 */
+/** 风险承受能力量化提示：供「?」悬浮展示 */
 export function getRiskHint(info: BasicInfo): string {
   const level = info.risk_tolerance
-  if (!level) return "尚未评估：完成风险测评后，这里会显示对应的量化标准"
+  if (!level) return "尚未评估：系统将根据资产、收入稳定性、年龄等因素综合估算"
   return `当前「${RISK_LABELS[level]}」：${RISK_QUANTIFIED[level]}`
 }
 
-/** 活期现金需求量化提示：显示需覆盖月数（不再算建议金额，因 monthly_expense 不属于 basic_info） */
+/** 投资偏好量化提示：供「?」悬浮展示 */
+export function getInvestmentPreferenceHint(info: BasicInfo): string {
+  const level = info.investment_preference
+  if (!level) return "尚未评估：系统将根据用户投资行为和偏好问卷综合估算"
+  return `当前「${PREFERENCE_LABELS[level]}」：${PREFERENCE_QUANTIFIED[level]}`
+}
+
+/** 活期现金需求量化提示：显示需覆盖月数（算法估算） */
 export function getLiquidityHint(info: BasicInfo): string {
   const level = info.liquidity_needs
-  if (!level) return "尚未设置：设定后按需覆盖的月数保留活期现金"
+  if (!level) return "尚未评估：系统将根据收入稳定性、家庭负担等因素自动估算"
   const months = LIQUIDITY_MONTHS[level]
   return `当前「${LIQUIDITY_LABELS[level]}」：需覆盖 ${months} 个月日常支出`
 }
