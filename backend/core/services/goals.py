@@ -9,17 +9,27 @@ from core.database import get_connection
 from core.services._common import OWNER_ID, _now
 
 
-def list_goals() -> list:
-    """列出当前用户全部目标：[{id, name, target, current, deadline, priority}, ...]。"""
+def list_goals(status: str | None = None) -> list:
+    """列出当前用户全部目标：[{id, name, target, current, deadline, priority, status}, ...]。
+
+    status 可选 'active' / 'completed' / 'paused' 用于筛选；不传则返回全部。
+    """
+    if status is None:
+        sql = """
+            SELECT goal_id, name, target, current, deadline, priority, status
+            FROM goals WHERE user_id = ? ORDER BY id
+        """
+        params = (OWNER_ID,)
+    else:
+        sql = """
+            SELECT goal_id, name, target, current, deadline, priority, status
+            FROM goals WHERE user_id = ? AND status = ? ORDER BY id
+        """
+        params = (OWNER_ID, status)
+
     conn = get_connection()
     try:
-        rows = conn.execute(
-            """
-            SELECT goal_id, name, target, current, deadline, priority
-            FROM goals WHERE user_id = ? ORDER BY id
-            """,
-            (OWNER_ID,),
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     finally:
         conn.close()
     return [
@@ -30,6 +40,7 @@ def list_goals() -> list:
             "current": row["current"],
             "deadline": row["deadline"] or "",
             "priority": row["priority"],
+            "status": row["status"],
         }
         for row in rows
     ]
@@ -88,3 +99,42 @@ def delete_goal(goal_id: str) -> bool:
         return cur.rowcount > 0
     finally:
         conn.close()
+
+
+def _set_goal_status(goal_id: str, status: str) -> dict | None:
+    """内部辅助：更新目标状态；返回更新后的目标或 None。"""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            """
+            UPDATE goals SET status = ?, updated_at = ?
+            WHERE user_id = ? AND goal_id = ?
+            """,
+            (status, _now(), OWNER_ID, goal_id),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return None
+    finally:
+        conn.close()
+    # 回读
+    goals = list_goals()
+    for g in goals:
+        if g["id"] == goal_id:
+            return g
+    return None
+
+
+def complete_goal(goal_id: str) -> dict | None:
+    """将目标标记为已完成；记录不存在返回 None。"""
+    return _set_goal_status(goal_id, "completed")
+
+
+def pause_goal(goal_id: str) -> dict | None:
+    """将目标标记为已暂停；记录不存在返回 None。"""
+    return _set_goal_status(goal_id, "paused")
+
+
+def resume_goal(goal_id: str) -> dict | None:
+    """将目标从暂停状态恢复为 active；记录不存在返回 None。"""
+    return _set_goal_status(goal_id, "active")

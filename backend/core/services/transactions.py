@@ -97,3 +97,64 @@ def delete_transaction(transaction_id: int) -> bool:
         return cur.rowcount > 0
     finally:
         conn.close()
+
+
+def update_transaction(transaction_id: int, **fields) -> dict | None:
+    """更新单条交易流水；只允许更新 amount/category/source/occurred_at/note/transaction_type。
+
+    返回更新后的流水 dict；记录不存在返回 None。
+    """
+    allowed = {
+        "transaction_type", "amount", "category",
+        "source", "occurred_at", "note",
+    }
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        # 没有可更新字段，直接返回当前记录
+        return _get_transaction(transaction_id)
+
+    set_clause = ", ".join(f"{c} = ?" for c in updates)
+    values = list(updates.values()) + [_now()]
+
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            f"""
+            UPDATE transactions
+            SET {set_clause}, updated_at = ?
+            WHERE user_id = ? AND id = ?
+            """,
+            values + [OWNER_ID, transaction_id],
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return None
+        return _get_transaction(transaction_id)
+    finally:
+        conn.close()
+
+
+def _get_transaction(transaction_id: int) -> dict | None:
+    """读取单条交易流水（内部辅助）。"""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT id, transaction_type, amount, category, source, occurred_at, note
+            FROM transactions WHERE user_id = ? AND id = ?
+            """,
+            (OWNER_ID, transaction_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "transaction_type": row["transaction_type"],
+        "amount": row["amount"],
+        "category": row["category"],
+        "source": row["source"] or "",
+        "occurred_at": row["occurred_at"],
+        "note": row["note"] or "",
+    }

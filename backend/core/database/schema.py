@@ -79,19 +79,21 @@ SCHEMA_SQL: str = """
         -- 对齐前端 FinancialGoal[]：goal_id 为前端用的字符串 id（如 "g1"）。
         -- ===================================================================
         CREATE TABLE IF NOT EXISTS goals (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL DEFAULT 1,
-            goal_id     TEXT    NOT NULL,
-            name        TEXT    NOT NULL,
-            target      NUMERIC NOT NULL,
-            current     NUMERIC NOT NULL DEFAULT 0,
-            deadline    TEXT,
-            priority    TEXT    NOT NULL DEFAULT 'medium'
-                                CHECK (priority IN ('high', 'medium', 'low')),
-            created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-            updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(user_id, goal_id)
-        );
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL DEFAULT 1,
+    goal_id     TEXT    NOT NULL,
+    name        TEXT    NOT NULL,
+    target      NUMERIC NOT NULL,
+    current     NUMERIC NOT NULL DEFAULT 0,
+    deadline    TEXT,
+    priority    TEXT    NOT NULL DEFAULT 'medium'
+                        CHECK (priority IN ('high', 'medium', 'low')),
+    status      TEXT    NOT NULL DEFAULT 'active'
+                        CHECK (status IN ('active', 'completed', 'paused')),
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, goal_id)
+);
 
         CREATE INDEX IF NOT EXISTS ix_goals_user ON goals (user_id);
 

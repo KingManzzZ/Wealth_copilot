@@ -14,6 +14,9 @@ for entry in os.listdir(_hub_dir):
     module_name = entry[:-3]  # "calculate.py" → "calculate"
     module = importlib.import_module(f".tools_hub.{module_name}", __package__)
     for name, func in inspect.getmembers(module, inspect.isfunction):
+        # 只注册在本模块内 def 的函数，跳过 import 来的 service 函数
+        if func.__module__ != module.__name__:
+            continue
         TOOL_REGISTRY[name] = func
     print(f"[tools_route] 自动发现并注册的工具: {list(TOOL_REGISTRY.keys())}")
 
