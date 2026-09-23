@@ -4,7 +4,7 @@
 职责：财务画像的业务逻辑（读取、创建、更新、完善度计算、首次设置判断）。
 单用户模式下 financial_profiles 表只维护一条记录（id 固定为 OWNER_ID），
 完整画像以 JSON 形式存储于 profile_data 字段；monthly_income 与
-risk_preference 同步冗余到独立列，便于将来直接做 SQL 统计。
+risk_tolerance 同步冗余到独立列，便于将来直接做 SQL 统计。
 
 连接策略：每个函数自建连接、用完即关，兼容 HTTP 路由与 Agent 工具两种调用场景。
 """
@@ -17,18 +17,46 @@ from core.database import OWNER_ID, get_connection
 # ---------------------------------------------------------------------------
 # 画像字段定义
 # ---------------------------------------------------------------------------
-# 画像契约的全部字段（与前端 UserProfile 对齐）
+# 画像契约的全部可写字段（与前端 UserProfile 对齐），同时是写入白名单
 CORE_FIELDS: tuple[str, ...] = (
+    # 基本资料
     "name",
     "age",
+    "city",
     "occupation",
-    "family",
+    "industry",
+    "education",
+    # 财务状况
     "monthly_income",
     "monthly_expense",
     "assets",
     "debts",
     "goals",
+    # 投资偏好
     "risk_tolerance",
+    "investing_years",
+    "liquidity_needs",
+    # 家庭情况
+    "family",
+    "marital_status",
+    "children",
+    "supporting_parents",
+)
+
+# 资料完善度清单（12 项，与前端 PROFILE_CHECKLIST 对齐）
+COMPLETION_FIELDS: tuple[str, ...] = (
+    "name",
+    "age",
+    "city",
+    "occupation",
+    "industry",
+    "education",
+    "risk_tolerance",
+    "investing_years",
+    "liquidity_needs",
+    "marital_status",
+    "children",
+    "supporting_parents",
 )
 
 # 首次设置（onboarding）必填字段：全部有效才算完成
@@ -55,7 +83,10 @@ def _default_profile() -> dict:
         "user_id": "default",
         "name": "",
         "age": 0,
+        "city": "",
         "occupation": "",
+        "industry": "",
+        "education": "",
         "family": "",
         "monthly_income": 0,
         "monthly_expense": 0,
@@ -63,6 +94,11 @@ def _default_profile() -> dict:
         "debts": {},
         "goals": [],
         "risk_tolerance": "",
+        "investing_years": 0,
+        "liquidity_needs": "",
+        "marital_status": "",
+        "children": "",
+        "supporting_parents": "",
         "last_updated": "",
     }
 
@@ -112,11 +148,11 @@ def _save_profile(conn, profile: dict) -> None:
     conn.execute(
         """
         INSERT INTO financial_profiles
-            (id, monthly_income, risk_preference, profile_data, updated_at)
+            (id, monthly_income, risk_tolerance, profile_data, updated_at)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             monthly_income = excluded.monthly_income,
-            risk_preference = excluded.risk_preference,
+            risk_tolerance = excluded.risk_tolerance,
             profile_data   = excluded.profile_data,
             updated_at     = excluded.updated_at
         """,
@@ -174,10 +210,10 @@ def update_profile(data: dict) -> dict:
 
 
 def get_profile_completion() -> float:
-    """计算资料完善程度：已填写的核心字段占比（0.0 ~ 1.0）。"""
+    """计算资料完善程度：完善度清单（12 项）已填写占比（0.0 ~ 1.0）。"""
     profile = get_profile()
-    filled = sum(1 for field in CORE_FIELDS if _is_filled(profile.get(field)))
-    return round(filled / len(CORE_FIELDS), 4)
+    filled = sum(1 for field in COMPLETION_FIELDS if _is_filled(profile.get(field)))
+    return round(filled / len(COMPLETION_FIELDS), 4)
 
 
 def is_onboarding_completed() -> bool:

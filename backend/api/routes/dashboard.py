@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from .profile import get_profile
+from core.services.profile import get_profile
 
 router = APIRouter()
 
@@ -27,12 +27,15 @@ HEALTH = {
 }
 
 def _build_kpis(p: dict) -> dict:
-    surplus = p["monthly_income"] - p["monthly_expense"]
+    income = p["monthly_income"]
+    expense = p["monthly_expense"]
+    surplus = income - expense
     return {
-        "monthly_income": p["monthly_income"],
-        "monthly_expense": p["monthly_expense"],
+        "monthly_income": income,
+        "monthly_expense": expense,
         "monthly_surplus": surplus,
-        "saving_rate": round(surplus / p["monthly_income"], 3),
+        # 画像未填收入时储蓄率置 0，避免除零
+        "saving_rate": round(surplus / income, 3) if income else 0,
     }
 
 def _build_asset_liability(p: dict) -> list:
@@ -41,7 +44,7 @@ def _build_asset_liability(p: dict) -> list:
     return items
 
 @router.get("/dashboard")
-async def dashboard():
+def dashboard():
     p = get_profile()
     return {
         "kpis": _build_kpis(p),

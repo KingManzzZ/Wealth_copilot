@@ -19,9 +19,9 @@
 
 | 方法 | 路径 | 说明 | 状态 |
 |---|---|---|---|
-| GET | `/api/profile` | 获取当前用户财务画像 | 路由仍为静态 mock，待接入 service 层 |
-| POST | `/api/profile` | 创建初始画像（已存在则整体覆盖） | 规划中，`service.create_profile` 已就绪 |
-| PATCH | `/api/profile` | 部分更新画像字段 | 规划中，`service.update_profile` 已就绪 |
+| GET | `/api/profile` | 获取当前用户财务画像 | 已实现（路由 → service 层） |
+| POST | `/api/profile` | 创建初始画像（已存在则整体覆盖） | 已实现（`service.create_profile`） |
+| PATCH | `/api/profile` | 部分更新画像字段 | 已实现（`service.update_profile`） |
 
 ### 2.2 字段定义（UserProfile）
 
@@ -170,7 +170,7 @@
 
 > 示例中 `children`、`supporting_parents` 未提供 —— 前端资料卡将显示「子女情况待确认」「赡养父母情况待确认」，完整度为 10/12 ≈ 83%。
 
-### 2.7 规划中接口（`POST` / `PATCH /api/profile`）
+### 2.7 `POST` / `PATCH /api/profile`
 
 | 项 | POST（创建） | PATCH（更新） |
 |---|---|---|
@@ -179,14 +179,14 @@
 | 非法字段 | 忽略（仅接受 2.2 契约内字段，剔除 `null`） | 同左 |
 | 响应 | 写入后的完整画像（含服务端生成的 `last_updated`） | 同左 |
 
-> 对应 `core/services/profile.py` 的 `create_profile()` / `update_profile()`，service 层已实现，HTTP 路由待添加。
+> 对应 `core/services/profile.py` 的 `create_profile()` / `update_profile()`；字段白名单与合并规则均由 service 层保证，路由已接入。
 
 ## 3. 其他接口（占位，待补充）
 
 | 方法 | 路径 | 说明 | 状态 |
 |---|---|---|---|
 | GET | `/api/health` | 健康检查，前端据此判断是否降级 mock | 已实现 |
-| GET | `/api/dashboard` | 仪表盘聚合数据 | 已实现（静态数据） |
+| GET | `/api/dashboard` | 仪表盘聚合数据（KPI/目标/资产负债由画像派生） | 已实现 |
 | POST | `/api/chat` | Agent SSE 流式对话 | 已实现，事件协议见 `frontend/API_CONTRACT.md` 第 4 节 |
 | — | 资产模块 | `core/services/asset.py` | service 占位，接口待定义 |
 | — | 交易流水模块 | `core/services/transaction.py` | service 占位，接口待定义 |
@@ -194,18 +194,13 @@
 ## 4. 数据存储约定（后端内部）
 
 - `financial_profiles` 表单行记录（`id = OWNER_ID = 1`），完整画像 JSON 存于 `profile_data` 字段；
-- `monthly_income`、`risk_preference` 冗余到独立列，便于将来直接 SQL 统计；
-- 建表语句见 `core/database/_first.py`，读写逻辑见 `core/services/profile.py`。
+- `monthly_income`、`risk_tolerance` 冗余到独立列，便于将来直接 SQL 统计；契约新增字段直接写入 JSON，无需 ALTER TABLE 加列；
+- 建表语句见 `core/database/schema.py`（连接管理见 `core/database/connection.py`），读写逻辑见 `core/services/profile.py`。
 
-## 5. 待对齐事项（TODO）
-
-1. `api/routes/profile.py` 移除静态 `PROFILE`，接入 `core.services.profile.get_profile()`；
-2. `service` 层 `CORE_FIELDS` 与 `_default_profile()` 扩展 8 个新字段（`city`、`industry`、`education`、`investing_years`、`liquidity_needs`、`marital_status`、`children`、`supporting_parents`），完善度清单由 10 项对齐为 12 项；
-3. （可选）添加 `POST` / `PATCH /api/profile` 路由；
-4. 前端 `frontend/API_CONTRACT.md` 的 profile 示例同步本文字段。
-
-## 6. 变更记录
+## 5. 变更记录
 
 | 日期 | 版本 | 说明 |
 |---|---|---|
 | 2026-09-22 | v0.1 | 初始版本：Profile 模块字段要求（含新增 8 个资料字段、量化标准、派生指标规则、规划中接口） |
+| 2026-09-22 | v0.2 | 按 TODO 对齐实现：路由接入 service 层（GET/POST/PATCH），service 补齐 8 个新字段与 12 项完善度清单，dashboard 改从 service 取数，前端契约示例同步 |
+| 2026-09-22 | v0.3 | `financial_profiles` 表结构对齐契约：移除遗留列 `income_stability`，冗余列 `risk_preference` 更名 `risk_tolerance`（与 JSON 字段同名），DDL 补 NOT NULL 约束 |

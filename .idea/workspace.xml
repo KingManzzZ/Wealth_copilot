@@ -6,10 +6,14 @@
   <component name="ChangeListManager">
     <list default="true" id="5a7aa9ce-d6e4-4dc8-be73-27e86c98e1a5" name="更改" comment="增添工具状态status字段，工具路由传参需要json字符串，修复因参数问题导致的前端白屏">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/App.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/components/top-bar.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/top-bar.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/lib/mock-data.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/lib/mock-data.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/types/index.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/types/index.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/API.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/API.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/api/routes/dashboard.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/api/routes/dashboard.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/api/routes/profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/api/routes/profile.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/core/database/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/core/database/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/core/database/_first.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/core/services/profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/core/services/profile.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/API_CONTRACT.md" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/API_CONTRACT.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -54,26 +58,26 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python.call_api.executor": "Run",
-    "Python.first.executor": "Run",
-    "Python.main.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "master",
-    "ignore.virus.scanning.warn.message": "true",
-    "last_opened_file_path": "E:/Python_Projects/Agent_study",
-    "node.js.detected.package.jshint": "true",
-    "node.js.selected.package.jshint": "",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "preferences.pluginManager",
-    "ts.external.directory.path": "E:\\Python_Projects\\Agent_study\\frontend\\node_modules\\typescript\\lib"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.call_api.executor&quot;: &quot;Run&quot;,
+    &quot;Python.first.executor&quot;: &quot;Run&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;E:/Python_Projects/Agent_study&quot;,
+    &quot;node.js.detected.package.jshint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.jshint&quot;: &quot;&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;E:\\Python_Projects\\Agent_study\\frontend\\node_modules\\typescript\\lib&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="E:\Python_Projects\Agent_study\backend\core" />

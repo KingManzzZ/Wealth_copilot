@@ -16,10 +16,13 @@
 - 响应 200：
 ```json
 {
-  "user_id": "demo-001",
+  "user_id": "user-1",
   "name": "学习者",
   "age": 29,
+  "city": "上海",
   "occupation": "后端工程师",
+  "industry": "互联网",
+  "education": "硕士",
   "family": "单身",
   "monthly_income": 18000,
   "monthly_expense": 9500,
@@ -29,11 +32,14 @@
     { "id": "g1", "name": "二套房首付", "target": 500000, "current": 130000, "deadline": "2031-09-16", "priority": "high" }
   ],
   "risk_tolerance": "balanced",
-  "last_updated": "2026-09-16"
+  "investing_years": 5,
+  "liquidity_needs": "medium",
+  "marital_status": "未婚",
+  "last_updated": "2026-09-22T10:30:00"
 }
 ```
 
-字段定义见 `src/types/index.ts` 的 `UserProfile`。`priority` ∈ `high|medium|low`。
+`children`、`supporting_parents` 未提供时前端显示「待确认」（允许省略）。完整字段定义、枚举量化标准与完善度规则见 `backend/API.md`；前端类型见 `src/types/index.ts` 的 `UserProfile`。`priority` ∈ `high|medium|low`。
 
 ## 3. `GET /api/dashboard`
 

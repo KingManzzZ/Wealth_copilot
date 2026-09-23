@@ -1,12 +1,14 @@
 """
-WealthPilot V1 数据库初始化（原生 SQLite 版本）。
+数据库表结构定义与初始化。
 
-单用户模式，不创建 users 表。
-通过 OWNER_ID 常量统一管理用户归属，未来扩展多用户时只需为各表添加 user_id 字段。
+职责：维护全部建表 DDL，提供幂等的初始化入口。
+单用户模式，不创建 users 表；通过 OWNER_ID 常量统一管理用户归属，
+未来扩展多用户时只需为各表添加 user_id 字段。
 """
 
-import os
 import sqlite3
+
+from core.database.connection import get_connection
 
 # ---------------------------------------------------------------------------
 # 单用户归属标识，未来扩展多用户时替换为真实的 user_id
@@ -14,41 +16,22 @@ import sqlite3
 OWNER_ID: int = 1
 
 # ---------------------------------------------------------------------------
-# 路径
+# 建表脚本：全部 IF NOT EXISTS，可重复执行（幂等）
 # ---------------------------------------------------------------------------
-BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH: str = os.path.join(BASE_DIR, "infrastructure", "data", "data.db")
-
-
-def get_connection() -> sqlite3.Connection:
-    """获取数据库连接，自动创建目录和数据库文件。"""
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir and not os.path.exists(db_dir):
-        os.makedirs(db_dir, exist_ok=True)
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db() -> None:
-    """创建所有数据表，若已存在则跳过。"""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.executescript("""
+SCHEMA_SQL: str = """
         -- ===================================================================
         -- 2.1 financial_profiles：财务画像表
-        -- 保存用户相对稳定的财务画像信息，单用户模式下只维护一条记录。
+        -- 完整画像以 JSON 存于 profile_data（字段契约见 backend/API.md）；
+        -- monthly_income、risk_tolerance 为冗余列，便于直接做 SQL 统计；
+        -- 单用户模式只维护一条记录（id 固定为 OWNER_ID）。
         -- ===================================================================
         CREATE TABLE IF NOT EXISTS financial_profiles (
             id              INTEGER PRIMARY KEY,
-            monthly_income  NUMERIC,
-            income_stability TEXT,
-            risk_preference TEXT,
-            profile_data    TEXT,
-            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            monthly_income  NUMERIC NOT NULL DEFAULT 0,
+            risk_tolerance  TEXT    NOT NULL DEFAULT '',
+            profile_data    TEXT    NOT NULL,
+            created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
         );
 
         -- ===================================================================
@@ -173,10 +156,23 @@ def init_db() -> None:
 
         CREATE INDEX IF NOT EXISTS ix_messages_conversation_created
             ON messages (conversation_id, created_at);
-        """)
-        conn.commit()
-    except sqlite3.Error as e:
-        print(f"初始化数据库失败: {e}")
-        conn.rollback()
+        """
+
+
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    """在给定连接上执行建表脚本（幂等；失败异常向上抛出）。"""
+    conn.executescript(SCHEMA_SQL)
+    conn.commit()
+
+
+def init_db() -> None:
+    """初始化数据库：创建所有表（幂等）。
+
+    供应用启动时显式调用（FastAPI lifespan）；不调用也有兜底——
+    get_connection() 进程内首次连接会自动执行一次同样的建表检查。
+    """
+    conn = get_connection()
+    try:
+        ensure_schema(conn)
     finally:
         conn.close()

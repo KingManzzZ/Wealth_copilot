@@ -1,1 +1,2 @@
-from core.database._first import init_db, get_connection, OWNER_ID
+from core.database.connection import get_connection
+from core.database.schema import OWNER_ID, init_db
