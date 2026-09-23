@@ -28,7 +28,7 @@
 | # | Tool 名称 | 说明 | 状态 |
 |---|-----------|------|------|
 | 1 | `get_financial_profile` | 获取用户当前财务画像，例如收入概况、现金、投资资产、负债、收入稳定性等。`basic_info_tools.py` | 已完成 |
-| 2 | `update_financial_profile` | 更新长期财务属性，例如收入变化、收入稳定性、风险偏好等。**注：已拆分为** `update_basic_info`（基本信息）+ `record_asset`/`update_asset`（资产）+ `record_liability`/`update_liability`（负债）+ `create_goal`/`update_goal`（目标）等独立工具，原 `update_financial_profile` 不再作为单一工具存在。 | 已完成 |
+| 2 | `update_financial_profile` | 更新长期财务属性，例如收入变化、收入稳定性、风险偏好等。**注：已拆分为** `update_basic_info`（基本信息）+ `record_asset`/`update_asset`（资产）+ `record_debt`/`update_debt`（负债）+ `create_goal`/`update_goal`（目标）等独立工具，原 `update_financial_profile` 不再作为单一工具存在。 | 已完成 |
 | 3 | `record_income` | 记录一笔收入，包含金额、来源、发生日期、备注等。`transaction_tools.py` | 已完成 |
 | 4 | `record_expense` | 记录一笔支出，包含金额、类别、发生日期、是否固定支出等。`transaction_tools.py` | 已完成 |
 | 5 | `get_transactions` | 按时间、类型、类别等条件查询收入和支出流水。`transaction_tools.py` | 已完成 |
@@ -52,9 +52,9 @@
 | 1 | `get_assets` | 查询现金、存款、投资资产及其他资产明细。`asset_tools.py` | 已完成 |
 | 2 | `record_asset` | 新增资产或记录资产估值。`asset_tools.py` | 已完成 |
 | 3 | `update_asset` | 更新资产余额、估值、名称或类型。底层与 `record_asset` 共用 UPSERT 语义。`asset_tools.py` | 已完成 |
-| 4 | `get_liabilities` | 查询贷款、信用卡欠款及其他负债。`debt_tools.py` | 已完成 |
-| 5 | `record_liability` | 新增负债，记录余额、利率、还款日等。`debt_tools.py` | 已完成 |
-| 6 | `update_liability` | 更新负债余额、利率、还款状态等。底层与 `record_liability` 共用 UPSERT 语义。`debt_tools.py` | 已完成 |
+| 4 | `get_debts` | 查询贷款、信用卡欠款及其他负债。`debt_tools.py` | 已完成 |
+| 5 | `record_debt` | 新增负债，记录余额、利率、还款日等。`debt_tools.py` | 已完成 |
+| 6 | `update_debt` | 更新负债余额、利率、还款状态等。底层与 `record_debt` 共用 UPSERT 语义。`debt_tools.py` | 已完成 |
 | 7 | `calculate_net_worth` | 计算净资产：资产总额减去负债总额。`asset_tools.py` | 已完成 |
 | 8 | `calculate_emergency_fund` | 根据必要月支出和目标保障月数，计算应急资金目标、现有覆盖程度及缺口。`asset_tools.py` | 已完成 |
 | 9 | `calculate_savings_rate` | 计算指定期间的储蓄率，并返回计算口径和所用数据。`cashflow_tools.py` | 已完成 |
@@ -190,7 +190,7 @@
 | Tool 名称 | 状态 |
 |-----------|------|
 | `get_assets` | 已完成 |
-| `get_liabilities` | 已完成 |
+| `get_debts` | 已完成 |
 | `calculate_net_worth` | 已完成 |
 | `calculate_emergency_fund` | 已完成 |
 | `calculate_savings_rate` | 已完成 |
@@ -245,7 +245,7 @@
 |------|--------|----------|
 | `basic_info_tools.py` | 2 | `get_financial_profile`, `update_basic_info` |
 | `asset_tools.py` | 5 | `get_assets`, `record_asset`, `update_asset`, `calculate_net_worth`, `calculate_emergency_fund` |
-| `debt_tools.py` | 3 | `get_liabilities`, `record_liability`, `update_liability` |
+| `debt_tools.py` | 3 | `get_debts`, `record_debt`, `update_debt` |
 | `goal_tools.py` | 5 | `create_goal`, `get_goals`, `update_goal`, `complete_goal_tool`, `calculate_goal_contribution` |
 | `transaction_tools.py` | 5 | `record_income`, `record_expense`, `get_transactions`, `update_transaction_tool`, `delete_transaction_tool` |
 | `cashflow_tools.py` | 3 | `get_monthly_cashflow`, `calculate_savings_rate`, `set_monthly_cashflow` |

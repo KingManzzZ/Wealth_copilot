@@ -40,16 +40,16 @@ def calculate_net_worth() -> dict:
     """计算净资产 = 资产总额 - 负债总额（取剩余本金）。
 
     Returns:
-        {"total_assets": ..., "total_liabilities": ..., "net_worth": ...}
+        {"total_assets": ..., "total_debts": ..., "net_worth": ...}
     """
     assets = list_assets()
     debts = list_debts()
     total_assets = sum(assets.values())
-    total_liabilities = sum(d["remaining"] for d in debts.values())
+    total_debts = sum(d["remaining"] for d in debts.values())
     return {
         "total_assets": total_assets,
-        "total_liabilities": total_liabilities,
-        "net_worth": total_assets - total_liabilities,
+        "total_debts": total_debts,
+        "net_worth": total_assets - total_debts,
     }
 
 

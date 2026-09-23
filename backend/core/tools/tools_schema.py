@@ -132,7 +132,7 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "get_liabilities",
+            "name": "get_debts",
             "description": "列出当前用户全部负债，返回 {name: {remaining, monthly_payment}} 字典。无需参数。",
             "parameters": {
                 "type": "object",
@@ -144,7 +144,7 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "record_liability",
+            "name": "record_debt",
             "description": "新增负债；同名已存在则更新（UPSERT）。",
             "parameters": {
                 "type": "object",
@@ -160,8 +160,8 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "update_liability",
-            "description": "更新负债余额或月还款；语义上与 record_liability 等价。",
+            "name": "update_debt",
+            "description": "更新负债余额或月还款；语义上与 record_debt 等价。",
             "parameters": {
                 "type": "object",
                 "properties": {

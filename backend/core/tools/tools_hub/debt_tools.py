@@ -1,20 +1,20 @@
 """
 债务工具集。
 
-- get_liabilities：列出全部负债
-- record_liability：新增负债（UPSERT 语义）
-- update_liability：更新负债余额或月还款（与 record_liability 等价）
+- get_debts：列出全部负债
+- record_debt：新增负债（UPSERT 语义）
+- update_debt：更新负债余额或月还款（与 record_debt 等价）
 """
 
 from core.services.debts import list_debts, upsert_debt
 
 
-def get_liabilities() -> dict:
+def get_debts() -> dict:
     """列出当前用户全部负债：{name: {remaining, monthly_payment}} 字典。"""
     return list_debts()
 
 
-def record_liability(name: str, remaining: float, monthly_payment: float) -> dict:
+def record_debt(name: str, remaining: float, monthly_payment: float) -> dict:
     """新增负债：同名负债已存在则更新（UPSERT）。
 
     Args:
@@ -28,6 +28,6 @@ def record_liability(name: str, remaining: float, monthly_payment: float) -> dic
     return upsert_debt(name, remaining, monthly_payment)
 
 
-def update_liability(name: str, remaining: float, monthly_payment: float) -> dict:
-    """更新负债余额或月还款；语义上与 record_liability 等价（底层都是 UPSERT）。"""
+def update_debt(name: str, remaining: float, monthly_payment: float) -> dict:
+    """更新负债余额或月还款；语义上与 record_debt 等价（底层都是 UPSERT）。"""
     return upsert_debt(name, remaining, monthly_payment)
