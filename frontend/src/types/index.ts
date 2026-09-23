@@ -54,8 +54,14 @@ export type ChatStreamEvent =
   | { type: "done" }
   | { type: "error"; message: string }
 
-// ===== 用户画像 =====
-export interface UserProfile {
+// ===== 用户画像（按拆表后结构） =====
+
+/**
+ * 基本信息：对齐后端 basic_info 表。
+ * 不再含 monthly_income/monthly_expense（从 monthly_cashflow 派生）；
+ * 不再含 assets/debts/goals（拆为独立类型，由各自接口返回）。
+ */
+export interface BasicInfo {
   user_id: string
   name?: string
   age?: number
@@ -67,11 +73,6 @@ export interface UserProfile {
   /** 教育程度 */
   education?: string
   family?: string
-  monthly_income?: number
-  monthly_expense?: number
-  assets: Record<string, number>
-  debts: Record<string, { remaining: number; monthly_payment: number }>
-  goals: FinancialGoal[]
   risk_tolerance?: "conservative" | "balanced" | "aggressive"
   /** 投资年限（年） */
   investing_years?: number
@@ -84,6 +85,33 @@ export interface UserProfile {
   /** 赡养父母情况 */
   supporting_parents?: string
   last_updated?: string
+}
+
+/** 资产：对齐后端 assets 表，键为资产名，值为当前估值 */
+export type Assets = Record<string, number>
+
+/** 债务：对齐后端 debts 表，键为债务名，值含剩余本金和月还款额 */
+export type Debts = Record<string, { remaining: number; monthly_payment: number }>
+
+/** 月度现金流汇总：对齐后端 monthly_cashflow 表 */
+export interface MonthlyCashflow {
+  /** 'YYYY-MM' 格式 */
+  month: string
+  income: number
+  expense: number
+  /** 派生：income - expense */
+  surplus: number
+}
+
+/** 单条交易流水：对齐后端 transactions 表 */
+export interface Transaction {
+  id: number
+  transaction_type: "income" | "expense"
+  amount: number
+  category: string
+  source?: string
+  occurred_at: string
+  note?: string
 }
 
 // ===== 仪表盘 =====

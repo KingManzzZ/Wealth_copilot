@@ -1,19 +1,19 @@
-import type { UserProfile } from "@/types"
-import { formatCurrency } from "@/lib/utils"
+import type { BasicInfo } from "@/types"
 
 // ============================================================
-// 财务画像工具：完善度统计、待确认项推导与量化提示
-// 填写规则与后端 core/services/profile.py 的 _is_filled 保持一致
+// 基本信息工具：完善度统计、待确认项推导与量化提示
+// 填写规则与后端 core/services/basic_info.py 的 _is_filled 保持一致
+// 移除了原 monthly_income/monthly_expense（已从 cashflow 派生，不再属于 basic_info）
 // ============================================================
 
 /** 风险承受能力等级 */
-export type RiskLevel = NonNullable<UserProfile["risk_tolerance"]>
+export type RiskLevel = NonNullable<BasicInfo["risk_tolerance"]>
 
 /** 活期现金需求等级 */
-export type LiquidityLevel = NonNullable<UserProfile["liquidity_needs"]>
+export type LiquidityLevel = NonNullable<BasicInfo["liquidity_needs"]>
 
-/** 个人资料清单：用于完善度统计与待确认项推导 */
-export const PROFILE_CHECKLIST: { key: keyof UserProfile; label: string }[] = [
+/** 个人资料清单：用于完善度统计与待确认项推导（10 项，移除了 monthly_income/expense） */
+export const PROFILE_CHECKLIST: { key: keyof BasicInfo; label: string }[] = [
   { key: "name", label: "姓名" },
   { key: "age", label: "年龄" },
   { key: "city", label: "城市" },
@@ -65,38 +65,34 @@ export function isFieldFilled(value: unknown): boolean {
 }
 
 /** 资料完善度：已填字段占比（0~1） */
-export function getProfileCompletion(profile: UserProfile): {
+export function getProfileCompletion(info: BasicInfo): {
   filled: number
   total: number
   ratio: number
 } {
   const total = PROFILE_CHECKLIST.length
-  const filled = PROFILE_CHECKLIST.filter(({ key }) => isFieldFilled(profile[key])).length
+  const filled = PROFILE_CHECKLIST.filter(({ key }) => isFieldFilled(info[key])).length
   return { filled, total, ratio: total === 0 ? 0 : filled / total }
 }
 
 /** 待确认项：清单中尚未填写的字段 */
-export function getPendingConfirmations(profile: UserProfile): string[] {
-  return PROFILE_CHECKLIST.filter(({ key }) => !isFieldFilled(profile[key])).map(
+export function getPendingConfirmations(info: BasicInfo): string[] {
+  return PROFILE_CHECKLIST.filter(({ key }) => !isFieldFilled(info[key])).map(
     ({ label }) => `${label}待确认`
   )
 }
 
 /** 风险等级量化提示：供「?」悬浮展示 */
-export function getRiskHint(profile: UserProfile): string {
-  const level = profile.risk_tolerance
+export function getRiskHint(info: BasicInfo): string {
+  const level = info.risk_tolerance
   if (!level) return "尚未评估：完成风险测评后，这里会显示对应的量化标准"
   return `当前「${RISK_LABELS[level]}」：${RISK_QUANTIFIED[level]}`
 }
 
-/** 活期现金需求量化提示：按当前月支出估算建议保留金额 */
-export function getLiquidityHint(profile: UserProfile): string {
-  const level = profile.liquidity_needs
+/** 活期现金需求量化提示：显示需覆盖月数（不再算建议金额，因 monthly_expense 不属于 basic_info） */
+export function getLiquidityHint(info: BasicInfo): string {
+  const level = info.liquidity_needs
   if (!level) return "尚未设置：设定后按需覆盖的月数保留活期现金"
   const months = LIQUIDITY_MONTHS[level]
-  const expense = profile.monthly_expense ?? 0
-  if (expense > 0) {
-    return `当前「${LIQUIDITY_LABELS[level]}」：需覆盖 ${months} 个月支出，按当前月支出 ${formatCurrency(expense)} 估算约 ${formatCurrency(months * expense)}`
-  }
   return `当前「${LIQUIDITY_LABELS[level]}」：需覆盖 ${months} 个月日常支出`
 }

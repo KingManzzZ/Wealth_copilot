@@ -1,16 +1,22 @@
 import type {
+  Assets,
+  BasicInfo,
   ChatStreamEvent,
   DashboardData,
-  UserProfile,
+  Debts,
+  FinancialGoal,
+  MonthlyCashflow,
+  Transaction,
 } from "@/types"
 
 // ============================================================
 // Mock 数据：基于 WealthPilot 典型用户画像
 // 月入 1.8 万，房贷 6500/月，目标 5 年攒 50 万首付
 // 后端不在线时，前端用这份数据独立跑通展示
+// 拆分后的 mock：对应 6 个独立接口
 // ============================================================
 
-export const mockProfile: UserProfile = {
+export const mockBasicInfo: BasicInfo = {
   user_id: "demo-001",
   name: "学习者",
   age: 29,
@@ -19,42 +25,6 @@ export const mockProfile: UserProfile = {
   industry: "互联网",
   education: "硕士",
   family: "单身",
-  monthly_income: 18000,
-  monthly_expense: 9500,
-  assets: {
-    现金及活期: 80000,
-    基金: 30000,
-    股票: 20000,
-  },
-  debts: {
-    房贷: { remaining: 800000, monthly_payment: 6500 },
-  },
-  goals: [
-    {
-      id: "g1",
-      name: "二套房首付",
-      target: 500000,
-      current: 130000,
-      deadline: "2031-09-16",
-      priority: "high",
-    },
-    {
-      id: "g2",
-      name: "应急资金（6 个月支出）",
-      target: 57000,
-      current: 42000,
-      deadline: "2027-03-16",
-      priority: "medium",
-    },
-    {
-      id: "g3",
-      name: "年度旅行基金",
-      target: 20000,
-      current: 6000,
-      deadline: "2027-06-16",
-      priority: "low",
-    },
-  ],
   risk_tolerance: "balanced",
   investing_years: 5,
   liquidity_needs: "medium",
@@ -63,6 +33,79 @@ export const mockProfile: UserProfile = {
   last_updated: "2026-09-16",
 }
 
+export const mockAssets: Assets = {
+  现金及活期: 80000,
+  基金: 30000,
+  股票: 20000,
+}
+
+export const mockDebts: Debts = {
+  房贷: { remaining: 800000, monthly_payment: 6500 },
+}
+
+export const mockGoals: FinancialGoal[] = [
+  {
+    id: "g1",
+    name: "二套房首付",
+    target: 500000,
+    current: 130000,
+    deadline: "2031-09-16",
+    priority: "high",
+  },
+  {
+    id: "g2",
+    name: "应急资金（6 个月支出）",
+    target: 57000,
+    current: 42000,
+    deadline: "2027-03-16",
+    priority: "medium",
+  },
+  {
+    id: "g3",
+    name: "年度旅行基金",
+    target: 20000,
+    current: 6000,
+    deadline: "2027-06-16",
+    priority: "low",
+  },
+]
+
+export const mockCashflow: MonthlyCashflow[] = [
+  { month: "2026-04", income: 18000, expense: 9200, surplus: 8800 },
+  { month: "2026-05", income: 18000, expense: 10500, surplus: 7500 },
+  { month: "2026-06", income: 18000, expense: 8900, surplus: 9100 },
+  { month: "2026-07", income: 18500, expense: 9500, surplus: 9000 },
+  { month: "2026-08", income: 18000, expense: 8700, surplus: 9300 },
+  { month: "2026-09", income: 18000, expense: 9500, surplus: 8500 },
+]
+
+export const mockTransactions: Transaction[] = [
+  {
+    id: 1,
+    transaction_type: "income",
+    amount: 18000,
+    category: "薪资",
+    source: "9月工资",
+    occurred_at: "2026-09-10T09:00:00",
+  },
+  {
+    id: 2,
+    transaction_type: "expense",
+    amount: 6500,
+    category: "房贷",
+    source: "9月房贷",
+    occurred_at: "2026-09-05T12:00:00",
+  },
+  {
+    id: 3,
+    transaction_type: "expense",
+    amount: 200,
+    category: "餐饮",
+    source: "午餐",
+    occurred_at: "2026-09-20T12:30:00",
+  },
+]
+
 export const mockDashboard: DashboardData = {
   kpis: {
     monthly_income: 18000,
@@ -70,15 +113,8 @@ export const mockDashboard: DashboardData = {
     monthly_surplus: 8500,
     saving_rate: 0.472,
   },
-  cashflow: [
-    { month: "4月", income: 18000, expense: 9200, surplus: 8800 },
-    { month: "5月", income: 18000, expense: 10500, surplus: 7500 },
-    { month: "6月", income: 18000, expense: 8900, surplus: 9100 },
-    { month: "7月", income: 18500, expense: 9500, surplus: 9000 },
-    { month: "8月", income: 18000, expense: 8700, surplus: 9300 },
-    { month: "9月", income: 18000, expense: 9500, surplus: 8500 },
-  ],
-  goals: mockProfile.goals,
+  cashflow: mockCashflow,
+  goals: mockGoals,
   asset_liability: [
     { name: "现金及活期", value: 80000, kind: "asset" },
     { name: "基金", value: 30000, kind: "asset" },

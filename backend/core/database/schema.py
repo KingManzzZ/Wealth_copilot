@@ -2,8 +2,8 @@
 数据库表结构定义与初始化。
 
 职责：维护全部建表 DDL，提供幂等的初始化入口。
-单用户模式，不创建 users 表；通过 OWNER_ID 常量统一管理用户归属，
-未来扩展多用户时只需为各表添加 user_id 字段。
+单用户模式：所有表通过 user_id 列预埋多用户扩展（当前固定为 OWNER_ID = 1）。
+原 financial_profiles 单表 JSON 设计已废弃，按关系建模拆为 6 张独立表。
 """
 
 import sqlite3
@@ -16,26 +16,110 @@ OWNER_ID: int = 1
 # 建表脚本：全部 IF NOT EXISTS，可重复执行（幂等）
 SCHEMA_SQL: str = """
         -- ===================================================================
-        -- 2.1 financial_profiles：财务画像表
-        -- 完整画像以 JSON 存于 profile_data（字段契约见 backend/API.md）；
-        -- monthly_income、risk_tolerance 为冗余列，便于直接做 SQL 统计；
-        -- 单用户模式只维护一条记录（id 固定为 OWNER_ID）。
+        -- 1. basic_info：用户基本信息表（原 financial_profiles 拆分）
+        -- 单用户模式下只维护一行（id = user_id = OWNER_ID = 1）。
+        -- 不再含 monthly_income/monthly_expense（从 monthly_cashflow 派生）。
+        -- 不再含 profile_data JSON 列；所有字段都是原子列。
         -- ===================================================================
-        CREATE TABLE IF NOT EXISTS financial_profiles (
-            id              INTEGER PRIMARY KEY,
-            monthly_income  NUMERIC NOT NULL DEFAULT 0,
-            risk_tolerance  TEXT    NOT NULL DEFAULT '',
-            profile_data    TEXT    NOT NULL,
-            created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-            updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+        CREATE TABLE IF NOT EXISTS basic_info (
+            id                   INTEGER PRIMARY KEY,
+            user_id              INTEGER NOT NULL DEFAULT 1,
+            name                 TEXT    NOT NULL DEFAULT '',
+            age                  NUMERIC NOT NULL DEFAULT 0,
+            city                 TEXT    NOT NULL DEFAULT '',
+            occupation           TEXT    NOT NULL DEFAULT '',
+            industry             TEXT    NOT NULL DEFAULT '',
+            education            TEXT    NOT NULL DEFAULT '',
+            family               TEXT    NOT NULL DEFAULT '',
+            marital_status       TEXT    NOT NULL DEFAULT '',
+            children             TEXT    NOT NULL DEFAULT '',
+            supporting_parents   TEXT    NOT NULL DEFAULT '',
+            risk_tolerance       TEXT    NOT NULL DEFAULT '',
+            investing_years      NUMERIC NOT NULL DEFAULT 0,
+            liquidity_needs      TEXT    NOT NULL DEFAULT '',
+            created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
         );
 
         -- ===================================================================
-        -- 2.2 transactions：收支流水表
-        -- 统一记录收入和支出。
+        -- 2. assets：资产表
+        -- 对齐前端 Record<string, number>：name 为前端字典 key，value 为估值。
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS assets (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL DEFAULT 1,
+            name        TEXT    NOT NULL,
+            value       NUMERIC NOT NULL DEFAULT 0,
+            created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, name)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_assets_user ON assets (user_id);
+
+        -- ===================================================================
+        -- 3. debts：债务表（原 liabilities 改名，对齐前端命名）
+        -- 对齐前端 Record<string, { remaining, monthly_payment }>。
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS debts (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id          INTEGER NOT NULL DEFAULT 1,
+            name             TEXT    NOT NULL,
+            remaining        NUMERIC NOT NULL DEFAULT 0,
+            monthly_payment  NUMERIC NOT NULL DEFAULT 0,
+            created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, name)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_debts_user ON debts (user_id);
+
+        -- ===================================================================
+        -- 4. goals：财富目标表
+        -- 对齐前端 FinancialGoal[]：goal_id 为前端用的字符串 id（如 "g1"）。
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS goals (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL DEFAULT 1,
+            goal_id     TEXT    NOT NULL,
+            name        TEXT    NOT NULL,
+            target      NUMERIC NOT NULL,
+            current     NUMERIC NOT NULL DEFAULT 0,
+            deadline    TEXT,
+            priority    TEXT    NOT NULL DEFAULT 'medium'
+                                CHECK (priority IN ('high', 'medium', 'low')),
+            created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, goal_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_goals_user ON goals (user_id);
+
+        -- ===================================================================
+        -- 5. monthly_cashflow：月度现金流汇总表（替代 dashboard 硬编码 CASHFLOW）
+        -- month 为 'YYYY-MM' 字符串；同一 user_id 下唯一。
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS monthly_cashflow (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL DEFAULT 1,
+            month       TEXT    NOT NULL,
+            income      NUMERIC NOT NULL DEFAULT 0,
+            expense     NUMERIC NOT NULL DEFAULT 0,
+            created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, month)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_cashflow_user_month
+            ON monthly_cashflow (user_id, month);
+
+        -- ===================================================================
+        -- 6. transactions：单月收支详情表（交易流水）
+        -- 复用原 schema 字段并新增 user_id 列。
         -- ===================================================================
         CREATE TABLE IF NOT EXISTS transactions (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id           INTEGER NOT NULL DEFAULT 1,
             transaction_type  TEXT    NOT NULL CHECK (transaction_type IN ('income', 'expense')),
             amount            NUMERIC NOT NULL CHECK (amount > 0),
             category          TEXT    NOT NULL,
@@ -46,86 +130,19 @@ SCHEMA_SQL: str = """
             updated_at        TEXT    NOT NULL DEFAULT (datetime('now'))
         );
 
-        CREATE INDEX IF NOT EXISTS ix_transactions_occurred_at
-            ON transactions (occurred_at);
+        CREATE INDEX IF NOT EXISTS ix_transactions_user_occurred
+            ON transactions (user_id, occurred_at);
 
-        CREATE INDEX IF NOT EXISTS ix_transactions_type_category
-            ON transactions (transaction_type, category);
-
-        -- ===================================================================
-        -- 2.3 assets：资产表
-        -- 记录用户当前持有的资产及估值。
-        -- ===================================================================
-        CREATE TABLE IF NOT EXISTS assets (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            name            TEXT    NOT NULL,
-            asset_type      TEXT    NOT NULL,
-            current_value   NUMERIC NOT NULL CHECK (current_value >= 0),
-            currency        TEXT    NOT NULL DEFAULT 'CNY',
-            valuation_date  TEXT,
-            note            TEXT,
-            created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-            updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
-        );
+        CREATE INDEX IF NOT EXISTS ix_transactions_user_type_category
+            ON transactions (user_id, transaction_type, category);
 
         -- ===================================================================
-        -- 2.4 liabilities：负债表
-        -- 记录用户当前负债情况。
-        -- ===================================================================
-        CREATE TABLE IF NOT EXISTS liabilities (
-            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-            name                  TEXT    NOT NULL,
-            liability_type        TEXT    NOT NULL,
-            current_balance       NUMERIC NOT NULL CHECK (current_balance >= 0),
-            annual_interest_rate  NUMERIC CHECK (annual_interest_rate >= 0),
-            minimum_payment       NUMERIC CHECK (minimum_payment >= 0),
-            due_date              TEXT,
-            note                  TEXT,
-            created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
-            updated_at            TEXT    NOT NULL DEFAULT (datetime('now'))
-        );
-
-        -- ===================================================================
-        -- 2.5 goals：财富目标表
-        -- 保存用户的储蓄、购置和其他财富目标。
-        -- ===================================================================
-        CREATE TABLE IF NOT EXISTS goals (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            name            TEXT    NOT NULL,
-            target_amount   NUMERIC NOT NULL CHECK (target_amount > 0),
-            current_amount  NUMERIC NOT NULL DEFAULT 0 CHECK (current_amount >= 0),
-            deadline        TEXT,
-            priority        INTEGER NOT NULL,
-            status          TEXT    NOT NULL DEFAULT 'active'
-                                    CHECK (status IN ('active', 'completed', 'paused')),
-            note            TEXT,
-            created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-            updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
-        );
-
-        -- ===================================================================
-        -- 2.6 wealth_plans：财富计划表
-        -- 保存 Agent 生成的财富计划。
-        -- ===================================================================
-        CREATE TABLE IF NOT EXISTS wealth_plans (
-            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-            name                  TEXT    NOT NULL,
-            plan_content          TEXT    NOT NULL,
-            monthly_saving_target NUMERIC,
-            status                TEXT    NOT NULL DEFAULT 'draft'
-                                            CHECK (status IN ('draft', 'active', 'archived')),
-            effective_from        TEXT,
-            effective_to          TEXT,
-            created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
-            updated_at            TEXT    NOT NULL DEFAULT (datetime('now'))
-        );
-
-        -- ===================================================================
-        -- 2.7 conversations：对话表
+        -- 7. conversations：对话表
         -- 保存 Agent 对话会话及摘要。
         -- ===================================================================
         CREATE TABLE IF NOT EXISTS conversations (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL DEFAULT 1,
             title       TEXT,
             summary     TEXT,
             status      TEXT    NOT NULL DEFAULT 'active'
@@ -135,7 +152,7 @@ SCHEMA_SQL: str = """
         );
 
         -- ===================================================================
-        -- 2.8 messages：消息表
+        -- 8. messages：消息表
         -- 保存用户、Agent 和工具之间的消息。
         -- 删除对话时级联删除关联消息。
         -- ===================================================================
@@ -163,6 +180,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
 def init_db() -> None:
     """初始化数据库：创建所有表（幂等）。
+
+    供应用启动时显式调用（FastAPI lifespan）；不调用也有兜底——
+    get_connection() 进程内首次连接会自动执行一次同样的建表检查。
     """
     conn = get_connection()
-   
+    try:
+        ensure_schema(conn)
+    finally:
+        conn.close()

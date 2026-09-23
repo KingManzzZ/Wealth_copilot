@@ -8,7 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { getProfile } from "@/lib/api"
+import { getBasicInfo } from "@/lib/api"
 import {
   LIQUIDITY_LABELS,
   RISK_LABELS,
@@ -18,22 +18,23 @@ import {
   getRiskHint,
 } from "@/lib/profile"
 import { cn, formatPercent } from "@/lib/utils"
-import type { UserProfile } from "@/types"
+import type { BasicInfo } from "@/types"
 
 /**
  * 顶栏右上角头像：点击弹出个人资料卡
  * - 基本信息 / 投资画像 / 家庭情况 三组字段
  * - 底部展示资料完整度与待确认项
- * 后端不在线时由 getProfile 自动降级到 mock 数据
+ * 后端不在线时由 getBasicInfo 自动降级到 mock 数据
+ * （monthly_income/monthly_expense 已从 cashflow 派生，不再属于 BasicInfo）
  */
 export function UserMenu() {
   const [open, setOpen] = useState(false)
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [basicInfo, setBasicInfo] = useState<BasicInfo | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    getProfile()
-      .then(setProfile)
+    getBasicInfo()
+      .then(setBasicInfo)
       .catch(() => {})
   }, [])
 
@@ -56,7 +57,7 @@ export function UserMenu() {
     }
   }, [open])
 
-  const initial = profile?.name?.trim().charAt(0) || "W"
+  const initial = basicInfo?.name?.trim().charAt(0) || "W"
 
   return (
     <div className="relative" ref={rootRef}>
@@ -92,8 +93,8 @@ export function UserMenu() {
             aria-label="个人资料"
             className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[21rem] overflow-hidden rounded-xl border border-border/70 bg-popover/95 shadow-lift backdrop-blur-xl"
           >
-            {profile ? (
-              <ProfileCard profile={profile} />
+            {basicInfo ? (
+              <ProfileCard info={basicInfo} />
             ) : (
               <div className="px-4 py-6 text-center text-xs text-muted-foreground">
                 资料加载中…
@@ -106,14 +107,14 @@ export function UserMenu() {
   )
 }
 
-function ProfileCard({ profile }: { profile: UserProfile }) {
-  const { filled, total, ratio } = getProfileCompletion(profile)
-  const pending = getPendingConfirmations(profile)
+function ProfileCard({ info }: { info: BasicInfo }) {
+  const { filled, total, ratio } = getProfileCompletion(info)
+  const pending = getPendingConfirmations(info)
 
   const summary = [
-    profile.city,
-    profile.occupation,
-    profile.age ? `${profile.age} 岁` : "",
+    info.city,
+    info.occupation,
+    info.age ? `${info.age} 岁` : "",
   ]
     .filter(Boolean)
     .join(" · ")
@@ -123,14 +124,14 @@ function ProfileCard({ profile }: { profile: UserProfile }) {
       {/* 头部：头像 + 姓名 + 概要 */}
       <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3.5">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-lg font-medium text-primary-foreground shadow-soft">
-          {profile.name?.trim().charAt(0) || "W"}
+          {info.name?.trim().charAt(0) || "W"}
         </span>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-semibold">
-              {profile.name?.trim() || "未设置姓名"}
+              {info.name?.trim() || "未设置姓名"}
             </span>
-            <Badge variant="secondary">{profile.user_id}</Badge>
+            <Badge variant="secondary">{info.user_id}</Badge>
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {summary || "资料待完善"}
@@ -140,36 +141,36 @@ function ProfileCard({ profile }: { profile: UserProfile }) {
 
       {/* 基本信息 */}
       <Section title="基本信息">
-        <InfoRow label="年龄" value={profile.age ? `${profile.age} 岁` : undefined} />
-        <InfoRow label="城市" value={profile.city} />
-        <InfoRow label="职业" value={profile.occupation} />
-        <InfoRow label="行业" value={profile.industry} />
-        <InfoRow label="教育程度" value={profile.education} />
+        <InfoRow label="年龄" value={info.age ? `${info.age} 岁` : undefined} />
+        <InfoRow label="城市" value={info.city} />
+        <InfoRow label="职业" value={info.occupation} />
+        <InfoRow label="行业" value={info.industry} />
+        <InfoRow label="教育程度" value={info.education} />
       </Section>
 
       {/* 投资画像 */}
       <Section title="投资画像">
         <InfoRow
           label="风险等级"
-          value={profile.risk_tolerance ? RISK_LABELS[profile.risk_tolerance] : undefined}
-          hint={getRiskHint(profile)}
+          value={info.risk_tolerance ? RISK_LABELS[info.risk_tolerance] : undefined}
+          hint={getRiskHint(info)}
         />
         <InfoRow
           label="投资年限"
-          value={profile.investing_years ? `${profile.investing_years} 年` : undefined}
+          value={info.investing_years ? `${info.investing_years} 年` : undefined}
         />
         <InfoRow
           label="活期现金需求"
-          value={profile.liquidity_needs ? LIQUIDITY_LABELS[profile.liquidity_needs] : undefined}
-          hint={getLiquidityHint(profile)}
+          value={info.liquidity_needs ? LIQUIDITY_LABELS[info.liquidity_needs] : undefined}
+          hint={getLiquidityHint(info)}
         />
       </Section>
 
       {/* 家庭情况 */}
       <Section title="家庭情况">
-        <InfoRow label="婚姻" value={profile.marital_status} />
-        <InfoRow label="子女" value={profile.children} />
-        <InfoRow label="赡养父母" value={profile.supporting_parents} />
+        <InfoRow label="婚姻" value={info.marital_status} />
+        <InfoRow label="子女" value={info.children} />
+        <InfoRow label="赡养父母" value={info.supporting_parents} />
       </Section>
 
       {/* 底部：完善度 + 待确认项 */}
