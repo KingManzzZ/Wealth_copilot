@@ -15,7 +15,7 @@ import sqlite3
 # 路径：core/database/connection.py -> 向上三级到 backend/ 根目录
 # ---------------------------------------------------------------------------
 BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH: str = os.path.join(BASE_DIR, "infrastructure", "data", "data.db")
+DB_PATH: str = os.path.join(BASE_DIR, "db", "data.db")
 
 # 进程内是否已完成建表检查（仅首次连接执行一次）
 _schema_checked: bool = False

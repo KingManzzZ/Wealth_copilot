@@ -13,5 +13,3 @@ venv/
 htmlcov/
 
 .idea/
-
-*.db
