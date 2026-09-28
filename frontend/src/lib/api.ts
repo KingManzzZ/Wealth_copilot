@@ -3,11 +3,14 @@ import type {
   BasicInfo,
   BackendStatus,
   ChatStreamEvent,
+  ConversationMessageInput,
+  ConversationMeta,
   DashboardData,
   Debts,
   FinancialGoal,
   HistoryMessage,
   MonthlyCashflow,
+  StoredMessage,
   Transaction,
 } from "@/types"
 import {
@@ -227,6 +230,86 @@ export async function getDashboard(): Promise<DashboardData> {
   const res = await fetch(`${API_BASE}/dashboard`)
   if (!res.ok) return mockDashboard
   return res.json()
+}
+
+// ============================================================
+// Conversations（会话持久化）
+// 后端为唯一真相源：离线时列表为空、读取返回 null、写入静默跳过
+// （mock 对话不落库，刷新即清）
+// ============================================================
+export async function listConversations(): Promise<ConversationMeta[]> {
+  const online = await detectBackendStatus()
+  if (online === "offline") return []
+  try {
+    const res = await fetch(`${API_BASE}/conversations`)
+    if (!res.ok) return []
+    return res.json()
+  } catch {
+    return []
+  }
+}
+
+export async function createConversation(
+  title?: string,
+): Promise<ConversationMeta | null> {
+  const online = await detectBackendStatus()
+  if (online === "offline") return null
+  try {
+    const res = await fetch(`${API_BASE}/conversations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: title ?? null }),
+    })
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+}
+
+export async function fetchConversationMessages(
+  id: number,
+): Promise<StoredMessage[] | null> {
+  const online = await detectBackendStatus()
+  if (online === "offline") return null
+  try {
+    const res = await fetch(`${API_BASE}/conversations/${id}/messages`)
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+}
+
+export async function appendConversationMessages(
+  id: number,
+  messages: ConversationMessageInput[],
+): Promise<boolean> {
+  const online = await detectBackendStatus()
+  if (online === "offline") return false
+  try {
+    const res = await fetch(`${API_BASE}/conversations/${id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function deleteConversationApi(id: number): Promise<boolean> {
+  const online = await detectBackendStatus()
+  if (online === "offline") return false
+  try {
+    const res = await fetch(`${API_BASE}/conversations/${id}`, {
+      method: "DELETE",
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
 
 /**

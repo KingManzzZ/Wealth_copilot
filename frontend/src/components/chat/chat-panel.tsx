@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react"
-import { motion } from "framer-motion"
-import { PanelLeft, PanelRight, Sparkles } from "lucide-react"
+import { AnimatePresence, motion } from "framer-motion"
+import { History, PanelLeft, PanelRight, Sparkles, SquarePen, Trash2 } from "lucide-react"
 import { useChat } from "@/hooks/useChat"
 import { Button } from "@/components/ui/button"
-import type { ChatSide } from "@/types"
+import type { ChatSide, ConversationMeta } from "@/types"
+import { cn } from "@/lib/utils"
 import { MessageBubble } from "./message-bubble"
 import { ChatInput } from "./chat-input"
 
@@ -13,10 +14,22 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
-  const { messages, isStreaming, sendMessage } = useChat()
+  const {
+    messages,
+    isStreaming,
+    sendMessage,
+    conversations,
+    conversationId,
+    selectConversation,
+    startNewConversation,
+    removeConversation,
+  } = useChat()
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [inputValue, setInputValue] = useState("")
+
+  const currentTitle =
+    conversations.find((c) => c.id === conversationId)?.title ?? null
 
   // 新消息到达时滚到底部
   useEffect(() => {
@@ -47,24 +60,46 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/50 px-5">
-        <span className="text-xs font-medium tracking-wide text-muted-foreground">
-          对话
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={onToggleSide}
-          title={`把对话栏移到${moveTo}`}
-          aria-label={`把对话栏移到${moveTo}`}
-        >
-          {side === "left" ? (
-            <PanelRight className="h-4 w-4" />
-          ) : (
-            <PanelLeft className="h-4 w-4" />
-          )}
-        </Button>
+      <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            onClick={startNewConversation}
+            disabled={isStreaming}
+            title="开始新对话"
+            aria-label="开始新对话"
+          >
+            <SquarePen className="h-4 w-4" />
+          </Button>
+          <span className="min-w-0 truncate text-xs font-medium tracking-wide text-muted-foreground">
+            {currentTitle ?? "新对话"}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center">
+          <HistoryMenu
+            conversations={conversations}
+            currentId={conversationId}
+            disabled={isStreaming}
+            onSelect={selectConversation}
+            onDelete={removeConversation}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={onToggleSide}
+            title={`把对话栏移到${moveTo}`}
+            aria-label={`把对话栏移到${moveTo}`}
+          >
+            {side === "left" ? (
+              <PanelRight className="h-4 w-4" />
+            ) : (
+              <PanelLeft className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-5">
@@ -94,6 +129,120 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
       </div>
     </div>
   )
+}
+
+/** 历史会话下拉：标题 + 相对时间 + 悬浮删除；流式进行中禁用切换避免串台 */
+function HistoryMenu({
+  conversations,
+  currentId,
+  disabled,
+  onSelect,
+  onDelete,
+}: {
+  conversations: ConversationMeta[]
+  currentId: number | null
+  disabled: boolean
+  onSelect: (id: number) => void
+  onDelete: (id: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  // 点击面板外部时收起
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [open])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        title="历史会话"
+        aria-label="历史会话"
+      >
+        <History className="h-4 w-4" />
+      </Button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute right-0 top-9 z-50 w-64 overflow-hidden rounded-xl border border-border/60 bg-card shadow-soft"
+          >
+            <div className="max-h-72 overflow-y-auto p-1.5">
+              {conversations.length === 0 ? (
+                <p className="px-2.5 py-5 text-center text-xs text-muted-foreground">
+                  暂无历史会话
+                </p>
+              ) : (
+                conversations.map((c) => (
+                  <div
+                    key={c.id}
+                    className={cn(
+                      "group flex items-center rounded-lg transition-colors hover:bg-accent/50",
+                      c.id === currentId && "bg-accent/40"
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 px-2.5 py-2 text-left"
+                      onClick={() => {
+                        setOpen(false)
+                        onSelect(c.id)
+                      }}
+                    >
+                      <span className="block truncate text-xs text-foreground">
+                        {c.title || "未命名会话"}
+                      </span>
+                      <span className="block text-[10px] text-muted-foreground/70">
+                        {formatRelative(c.updated_at)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="mr-1 rounded p-1.5 text-muted-foreground/50 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                      title="删除会话"
+                      aria-label="删除会话"
+                      onClick={() => onDelete(c.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+/** updated_at → 相对时间文案 */
+function formatRelative(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return ""
+  const diffMin = Math.floor((Date.now() - t) / 60000)
+  if (diffMin < 1) return "刚刚"
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  const h = Math.floor(diffMin / 60)
+  if (h < 24) return `${h} 小时前`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d} 天前`
+  return new Date(iso).toLocaleDateString()
 }
 
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {

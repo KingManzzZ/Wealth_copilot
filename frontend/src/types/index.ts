@@ -54,6 +54,30 @@ export type ChatStreamEvent =
   | { type: "done" }
   | { type: "error"; message: string }
 
+// ===== 会话管理（GPT 式多会话，对齐后端 conversations/messages 表） =====
+
+/** 历史会话列表项 */
+export interface ConversationMeta {
+  id: number
+  title: string | null
+  updated_at: string
+}
+
+/** 写入后端的消息条目；assistant 可内嵌工具调用完整 UI 结构（JSON 落库） */
+export interface ConversationMessageInput {
+  role: "user" | "assistant"
+  content: string
+  tool_calls?: ToolCall[]
+}
+
+/** 后端返回的存储消息，还原时直接映射回 ChatMessage */
+export interface StoredMessage {
+  id: number
+  role: "user" | "assistant"
+  content: string
+  tool_calls?: ToolCall[]
+}
+
 // ===== 用户画像（按拆表后结构） =====
 
 /**

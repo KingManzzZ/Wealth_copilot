@@ -10,6 +10,7 @@ from api.routes.debts import router as debts_router
 from api.routes.goals import router as goals_router
 from api.routes.cashflow import router as cashflow_router
 from api.routes.transactions import router as transactions_router
+from api.routes.conversations import router as conversations_router
 from api.routes.chat import router as chat_router
 from core.database import init_db
 
@@ -32,6 +33,7 @@ app.include_router(debts_router, prefix="/api", tags=["debts"])
 app.include_router(goals_router, prefix="/api", tags=["goals"])
 app.include_router(cashflow_router, prefix="/api", tags=["cashflow"])
 app.include_router(transactions_router, prefix="/api", tags=["transactions"])
+app.include_router(conversations_router, prefix="/api", tags=["conversations"])
 app.include_router(chat_router, prefix="/api", tags=["chat"])
 
 

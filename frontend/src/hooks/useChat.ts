@@ -1,13 +1,25 @@
-import { useCallback, useRef, useState } from "react"
-import { streamChat } from "@/lib/api"
+import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  appendConversationMessages,
+  createConversation,
+  deleteConversationApi,
+  fetchConversationMessages,
+  listConversations,
+  streamChat,
+} from "@/lib/api"
 import type {
   ChatMessage,
   ChatStreamEvent,
+  ConversationMessageInput,
+  ConversationMeta,
   HistoryMessage,
+  StoredMessage,
   ToolCall,
 } from "@/types"
 
 const uid = () => Math.random().toString(36).slice(2, 11)
+
+// 刷新即新会话：不保留任何本地锚点，历史会话通过下拉进入
 
 /**
  * 把前端的 ChatMessage 列表还原成后端需要的 OpenAI 格式历史消息：
@@ -58,14 +70,42 @@ function buildHistory(messages: ChatMessage[]): HistoryMessage[] {
   return history
 }
 
+/** 后端存储消息 → 前端 ChatMessage（DB 行 id 加前缀转字符串，避免与 uid 冲突） */
+function toChatMessage(m: StoredMessage): ChatMessage {
+  return {
+    id: `db-${m.id}`,
+    role: m.role,
+    content: m.content,
+    toolCalls: m.tool_calls ?? [],
+    createdAt: Date.now(),
+  }
+}
+
+/** 前端消息 → 写入条目（assistant 带 toolCalls 完整 UI 结构，空则不带字段） */
+function toInput(m: ChatMessage): ConversationMessageInput {
+  const item: ConversationMessageInput = {
+    role: m.role as "user" | "assistant",
+    content: m.content,
+  }
+  if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
+    item.tool_calls = m.toolCalls
+  }
+  return item
+}
+
 /**
- * 聊天状态管理 hook
- * 维护消息列表 + 流式接收 Agent 事件（thinking/tool_call/tool_result/answer）
+ * 聊天状态管理 hook（GPT 式多会话）
+ * - 会话行惰性创建：新会话纯前端状态，发出首条消息时才建行
+ * - 刷新即新会话：挂载时只拉历史列表，不恢复上次停留的会话
+ * - 每轮流结束后把 user + assistant 消息批量落库（一次写入，不逐事件写）
  */
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
+  const [conversations, setConversations] = useState<ConversationMeta[]>([])
+  const [conversationId, setConversationId] = useState<number | null>(null)
   const assistantIdRef = useRef<string | null>(null)
+  const conversationIdRef = useRef<number | null>(null)
   const messagesRef = useRef<ChatMessage[]>([])
 
   // 用 ref 同步最新 messages，避免闭包捕获旧值
@@ -74,70 +114,158 @@ export function useChat() {
     setMessages(next)
   }
 
-  const sendMessage = useCallback(async (text: string) => {
-    const trimmed = text.trim()
-    if (!trimmed || isStreaming) return
+  const refreshConversations = useCallback(async () => {
+    setConversations(await listConversations())
+  }, [])
 
-    const userMsg: ChatMessage = {
-      id: uid(),
-      role: "user",
-      content: trimmed,
-      createdAt: Date.now(),
-    }
-    const assistantMsg: ChatMessage = {
-      id: uid(),
-      role: "assistant",
-      content: "",
-      toolCalls: [],
-      createdAt: Date.now(),
-    }
-    assistantIdRef.current = assistantMsg.id
+  // 登记当前会话 id（state + ref）
+  const adoptConversation = useCallback((id: number) => {
+    conversationIdRef.current = id
+    setConversationId(id)
+  }, [])
 
-    const history = buildHistory(messagesRef.current)
+  // 挂载：只拉历史列表供下拉显示；刷新即新会话，不恢复上次停留的会话
+  useEffect(() => {
+    void refreshConversations()
+  }, [refreshConversations])
 
-    syncRef([...messagesRef.current, userMsg, assistantMsg])
-    setIsStreaming(true)
+  /** 开始新会话：纯前端重置，不发请求（发了首条消息才真正建行） */
+  const startNewConversation = useCallback(() => {
+    conversationIdRef.current = null
+    setConversationId(null)
+    syncRef([])
+  }, [])
 
-    try {
-      for await (const evt of streamChat(trimmed, history)) {
+  /** 进入历史会话：懒加载该会话消息并还原 */
+  const selectConversation = useCallback(
+    async (id: number) => {
+      if (isStreaming || id === conversationIdRef.current) return
+      const storedMessages = await fetchConversationMessages(id)
+      if (storedMessages === null) {
+        // 会话可能已被删除，刷新列表兜底
+        void refreshConversations()
+        return
+      }
+      adoptConversation(id)
+      syncRef(storedMessages.map(toChatMessage))
+    },
+    [adoptConversation, isStreaming, refreshConversations]
+  )
+
+  /** 删除会话；若删除的是当前会话则重置为新会话 */
+  const removeConversation = useCallback(
+    async (id: number) => {
+      const ok = await deleteConversationApi(id)
+      if (!ok) return
+      setConversations((list) => list.filter((c) => c.id !== id))
+      if (conversationIdRef.current === id) startNewConversation()
+    },
+    [startNewConversation]
+  )
+
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed || isStreaming) return
+
+      // 首条消息发出时才真正创建会话；后端不可用（mock 模式）则 convId 保持 null，本轮不落库
+      let convId = conversationIdRef.current
+      if (convId === null) {
+        const conv = await createConversation()
+        if (conv) {
+          adoptConversation(conv.id)
+          convId = conv.id
+        }
+      }
+
+      const userMsg: ChatMessage = {
+        id: uid(),
+        role: "user",
+        content: trimmed,
+        createdAt: Date.now(),
+      }
+      const assistantMsg: ChatMessage = {
+        id: uid(),
+        role: "assistant",
+        content: "",
+        toolCalls: [],
+        createdAt: Date.now(),
+      }
+      const userMsgId = userMsg.id
+      const assistantMsgId = assistantMsg.id
+      assistantIdRef.current = assistantMsg.id
+
+      const history = buildHistory(messagesRef.current)
+
+      syncRef([...messagesRef.current, userMsg, assistantMsg])
+      setIsStreaming(true)
+
+      try {
+        for await (const evt of streamChat(trimmed, history)) {
+          const current = messagesRef.current
+          syncRef(
+            current.map((m) =>
+              m.id === assistantIdRef.current ? applyEvent(m, evt) : m
+            )
+          )
+        }
+      } catch (e) {
         const current = messagesRef.current
         syncRef(
           current.map((m) =>
-            m.id === assistantIdRef.current ? applyEvent(m, evt) : m
+            m.id === assistantIdRef.current
+              ? {
+                  ...m,
+                  content: m.content + `\n\n[错误] ${(e as Error).message}`,
+                }
+              : m
           )
         )
-      }
-    } catch (e) {
-      const current = messagesRef.current
-      syncRef(
-        current.map((m) =>
-          m.id === assistantIdRef.current
-            ? {
-                ...m,
-                content: m.content + `\n\n[错误] ${(e as Error).message}`,
-              }
-            : m
-        )
-      )
-    } finally {
-      // 若流在产出任何事件前就失败，assistant 消息既无内容也无工具调用，
-      // 只可能残留一个空壳（错误已在 catch 追加到 content）。
-      // 如果连错误都没留下（极端情况），移除这条空消息避免 typing 指示器常驻。
-      const current = messagesRef.current
-      const assistant = current.find((m) => m.id === assistantIdRef.current)
-      if (
-        assistant &&
-        !assistant.content &&
-        (!assistant.toolCalls || assistant.toolCalls.length === 0)
-      ) {
-        syncRef(current.filter((m) => m.id !== assistantIdRef.current))
-      }
-      setIsStreaming(false)
-      assistantIdRef.current = null
-    }
-  }, [isStreaming])
+      } finally {
+        // 若流在产出任何事件前就失败，assistant 消息既无内容也无工具调用，
+        // 只可能残留一个空壳（错误已在 catch 追加到 content）。
+        // 如果连错误都没留下（极端情况），移除这条空消息避免 typing 指示器常驻。
+        const current = messagesRef.current
+        const assistant = current.find((m) => m.id === assistantIdRef.current)
+        if (
+          assistant &&
+          !assistant.content &&
+          (!assistant.toolCalls || assistant.toolCalls.length === 0)
+        ) {
+          syncRef(current.filter((m) => m.id !== assistantIdRef.current))
+        }
+        setIsStreaming(false)
+        assistantIdRef.current = null
 
-  return { messages, isStreaming, sendMessage }
+        // 本轮消息落库：每轮一次批量写入；空壳 assistant 已被移除时只存 user 条
+        if (convId !== null) {
+          const currentUser = messagesRef.current.find((m) => m.id === userMsgId)
+          const finalAssistant = messagesRef.current.find(
+            (m) => m.id === assistantMsgId
+          )
+          const items: ConversationMessageInput[] = []
+          if (currentUser) items.push(toInput(currentUser))
+          if (finalAssistant) items.push(toInput(finalAssistant))
+          if (items.length > 0) {
+            await appendConversationMessages(convId, items)
+          }
+          void refreshConversations() // 标题/排序可能变化
+        }
+      }
+    },
+    [adoptConversation, isStreaming, refreshConversations]
+  )
+
+  return {
+    messages,
+    isStreaming,
+    sendMessage,
+    conversations,
+    conversationId,
+    selectConversation,
+    startNewConversation,
+    removeConversation,
+  }
 }
 
 function applyEvent(msg: ChatMessage, evt: ChatStreamEvent): ChatMessage {

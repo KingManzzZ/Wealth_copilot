@@ -1,7 +1,7 @@
 # WealthPilot 后端接口文档
 
-> 版本：v0.4 ｜ 更新日期：2026-09-23
-> 适用范围：本文档描述后端 API 契约。v0.4 按"全表拆分"重构，原 `/api/profile` 聚合端点废弃，按子资源拆为 6 组 RESTful 端点。
+> 版本：v0.6 ｜ 更新日期：2026-09-24
+> 适用范围：本文档描述后端 API 契约。v0.4 按"全表拆分"重构，原 `/api/profile` 聚合端点废弃，按子资源拆为 6 组 RESTful 端点；v0.6 启用 conversations/messages 两张表，新增 GPT 式多会话管理。
 > 前端本地推导逻辑见 `frontend/src/lib/profile.ts`，前端类型定义见 `frontend/src/types/index.ts`。
 
 ## 1. 通用约定
@@ -39,6 +39,11 @@
 | POST | `/api/transactions` | 新增单条交易流水 |
 | DELETE | `/api/transactions/{id}` | 删除单条交易 |
 | GET | `/api/dashboard` | 仪表盘聚合数据（KPI/现金流/目标/资产负债派生） |
+| GET | `/api/conversations` | 会话列表（历史记录，按 updated_at 倒序） |
+| POST | `/api/conversations` | 创建会话（首条消息发出时惰性调用） |
+| GET | `/api/conversations/{id}/messages` | 懒加载某会话全部消息 |
+| POST | `/api/conversations/{id}/messages` | 批量追加消息（每轮对话一次写入） |
+| DELETE | `/api/conversations/{id}` | 删除会话（messages 级联清除） |
 
 ### 2.2 基本信息（basic_info 表）
 
@@ -183,6 +188,35 @@
 
 KPI 派生规则：取 `monthly_cashflow` 表最近一月的 `income` / `expense`，`surplus = income - expense`，`saving_rate = surplus / income`（income 为 0 时置 0）。
 
+### 2.11 会话（conversations / messages 表）
+
+GPT 式多会话：会话行**惰性创建**（发出首条消息时才建，空会话不落库）；前端用 localStorage 记住"当前停留在哪个会话 id"，聊天内容全部以后端为真相源。
+
+**conversations**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | number | 自增 id |
+| `title` | string \| null | 会话标题；为空时由首条 user 消息截取前 20 字自动补 |
+| `updated_at` | string | 最近一次追加消息时间（列表排序依据） |
+| `summary` / `status` | — | 预留字段（归档/摘要），现阶段不启用 |
+
+- GET `/api/conversations` → `[{id, title, updated_at}, ...]`
+- POST `/api/conversations` body `{title?}` → `{id, title, updated_at}`
+
+**messages**（嵌套存储：assistant 行的 `tool_calls` 列存完整 UI 结构 JSON，还原时 1:1 映射回前端 `ChatMessage`，不做规范化拆行）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | number | 自增 id（会话内按 id 升序即消息顺序） |
+| `role` | enum | 仅 `user` / `assistant`（tool 中间态内嵌在 assistant.tool_calls） |
+| `content` | string | 消息文本 |
+| `tool_calls` | JSON \| null | 仅 assistant：`[{id, name, arguments, result?, status}]` |
+
+- GET `/api/conversations/{id}/messages` → `[{id, role, content, tool_calls?}, ...]`；会话不存在 404
+- POST `/api/conversations/{id}/messages` body `{messages: [{role, content, tool_calls?}]}` → `{conversation_id, title, saved}`；每轮对话一次批量写入
+- DELETE `/api/conversations/{id}` → 硬删，messages 由 `ON DELETE CASCADE` 级联清除
+
 ## 3. 其他接口
 
 | 方法 | 路径 | 说明 | 状态 |
@@ -202,6 +236,8 @@ v0.4 起按关系建模拆为 6 张表，每张表都带 `user_id` 列（INTEGER
 | `goals` | 财富目标，多行 | id, user_id, goal_id, name, target, current, deadline, priority |
 | `monthly_cashflow` | 月度现金流汇总 | id, user_id, month, income, expense |
 | `transactions` | 交易流水明细 | id, user_id, transaction_type, amount, category, source, occurred_at, note |
+| `conversations` | 对话会话（v0.6 启用） | id, user_id, title, summary, status, created_at, updated_at |
+| `messages` | 会话消息（v0.6 启用） | id, conversation_id (CASCADE), role, content, tool_calls, tool_name, created_at |
 
 UNIQUE 约束：
 - `basic_info`：`id`（单行模式固定为 OWNER_ID）
@@ -220,3 +256,4 @@ UNIQUE 约束：
 | 2026-09-22 | v0.3 | `financial_profiles` 表结构对齐契约：移除遗留列 `income_stability`，冗余列 `risk_preference` 更名 `risk_tolerance`（与 JSON 字段同名），DDL 补 NOT NULL 约束 |
 | 2026-09-23 | v0.4 | **全表拆分重构**：废弃 `financial_profiles.profile_data` JSON 单列设计，按关系建模拆为 6 张独立表（basic_info / assets / debts / goals / monthly_cashflow / transactions）；废弃 `/api/profile` 聚合端点，按子资源拆为 6 组 RESTful 端点；`monthly_income`/`monthly_expense` 不再存为字段，由 `monthly_cashflow` 派生；每张表预埋 `user_id` 列；dashboard 改为从子 service 聚合数据，删除硬编码 CASHFLOW |
 | 2026-09-23 | v0.5 | **算法字段隔离**：`risk_tolerance` 更名展示为"风险承受能力"；新增 `investment_preference`（投资偏好）列；`risk_tolerance`/`investment_preference`/`liquidity_needs` 三个字段标记为算法估算，从 `BASIC_INFO_FIELDS` 可写白名单和 `update_basic_info` tool 参数中移除；前端 ProfileCard 实现行内编辑（可编辑字段点击直接修改），三个算法字段只读展示 |
+| 2026-09-24 | v0.6 | **会话持久化（GPT 式多会话）**：启用预留的 conversations/messages 两张表，新增 5 个 RESTful 端点（列表/创建/懒加载消息/批量追加/删除级联）；会话行惰性创建；消息按 UI 结构嵌套存储（assistant.tool_calls 存完整 JSON）；前端 useChat 升级为会话感知，localStorage 仅存当前会话 id，刷新自动恢复，历史下拉支持切换与删除；后端离线时 mock 对话不落库 |
