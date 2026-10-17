@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ArrowDownRight, ArrowUpRight, PiggyBank, Wallet } from "lucide-react"
 import { cn, formatCurrency, formatPercent } from "@/lib/utils"
 import type { FinancialKPIs } from "@/types"
@@ -89,6 +89,9 @@ export function KpiOverview({ kpis }: { kpis: FinancialKPIs }) {
 
 /**
  * 数字 count-up 动画：easeOutCubic 缓动
+ *
+ * 从**上一个值**起跳而不是从 0：Agent 写完数据触发 dashboard 重拉时，
+ * 数字应该从旧值平滑过渡到新值，而不是先掉回 0 再涨上去。
  */
 function CountUp({
   value,
@@ -100,9 +103,12 @@ function CountUp({
   delay?: number
 }) {
   const [display, setDisplay] = useState(() => format(0))
+  // 上一帧落在哪个值上：动画被打断（父组件重渲染）时从这里续上
+  const fromRef = useRef(0)
 
   useEffect(() => {
     let raf: number
+    const from = fromRef.current
     const start = performance.now() + delay * 1000
     const duration = 900
 
@@ -113,7 +119,9 @@ function CountUp({
       }
       const t = Math.min(1, (now - start) / duration)
       const eased = 1 - Math.pow(1 - t, 3)
-      setDisplay(format(value * eased))
+      const shown = from + (value - from) * eased
+      fromRef.current = shown
+      setDisplay(format(shown))
       if (t < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)

@@ -6,6 +6,7 @@ import {
   listConversations,
   streamChat,
 } from "@/lib/api"
+import { emitChatTurnCompleted } from "@/lib/events"
 import type {
   ChatMessage,
   ChatStreamEvent,
@@ -227,6 +228,15 @@ export function useChat() {
         if (convId !== null) {
           void refreshConversations()
         }
+
+        // 失效广播：这一轮的工具调用可能改过库（资产 / 流水 / 基本资料），
+        // 通知 Dashboard、UserMenu、流水抽屉自行重拉。
+        // 无条件广播——不判断"这轮有没有写"：写入口随工具集增长，判错一次就是静默不刷新，
+        // 而消费者只是多拉 1~2 个聚合 GET。详见 lib/events.ts。
+        emitChatTurnCompleted({
+          conversationId: convId,
+          toolNames: assistant?.toolCalls?.map((tc) => tc.name) ?? [],
+        })
       }
     },
     [adoptConversation, isStreaming, refreshConversations]

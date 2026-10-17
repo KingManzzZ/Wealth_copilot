@@ -8,7 +8,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { getBasicInfo, upsertBasicInfo } from "@/lib/api"
+import { getBasicInfo, refetchBasicInfo, upsertBasicInfo } from "@/lib/api"
+import { useChatTurnCompleted } from "@/hooks/useChatTurnCompleted"
 import {
   LIQUIDITY_LABELS,
   PREFERENCE_LABELS,
@@ -42,6 +43,14 @@ export function UserMenu() {
       .then(setBasicInfo)
       .catch(() => {})
   }, [])
+
+  // Agent 可能通过 update_basic_info 改过资料：一轮对话结束后静默重拉。
+  // 只覆盖成功结果；正在行内编辑的字段不会被覆盖（InfoRow 仅在非编辑态同步 draft）。
+  useChatTurnCompleted(() => {
+    void refetchBasicInfo().then((next) => {
+      if (next) setBasicInfo(next)
+    })
+  })
 
   // 行内编辑保存：调 upsertBasicInfo → 成功刷新 state，失败保持原值
   const handleSave = useCallback(async (field: keyof BasicInfo, value: string) => {

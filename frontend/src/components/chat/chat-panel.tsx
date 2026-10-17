@@ -246,7 +246,9 @@ function formatRelative(iso: string): string {
 }
 
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
+  // 第一条是写入引导：Agent 能记账这件事本身（CX-7）比"能查询"更需要被看见
   const suggestions = [
+    "帮我记一笔今天的午餐 35 元",
     "我的月度现金流怎么样？",
     "5 年内能攒够 50 万首付吗？",
     "应急资金够吗？",

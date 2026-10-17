@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { AlertTriangle, RefreshCw } from "lucide-react"
-import { getDashboard } from "@/lib/api"
+import { getDashboard, refetchDashboard } from "@/lib/api"
+import { useChatTurnCompleted } from "@/hooks/useChatTurnCompleted"
 import type { DashboardData } from "@/types"
 import { KpiOverview } from "./kpi-overview"
 import { CashflowChart } from "./cashflow-chart"
@@ -13,6 +14,7 @@ export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // 首次挂载与「重试」：保留 mock 兜底（离线时演示仍有数据可看）
   const load = useCallback(() => {
     setError(null)
     getDashboard()
@@ -25,6 +27,16 @@ export function Dashboard() {
   useEffect(() => {
     load()
   }, [load])
+
+  // Agent 一轮对话结束后静默重拉：成功才覆盖，失败保持旧值，
+  // 且不碰 error —— 刷新失败不该把已渲染的仪表盘换成错误页。
+  const refresh = useCallback(() => {
+    void refetchDashboard().then((next) => {
+      if (next) setData(next)
+    })
+  }, [])
+
+  useChatTurnCompleted(refresh)
 
   if (error) return <DashboardError message={error} onRetry={load} />
   if (!data) return <DashboardSkeleton />

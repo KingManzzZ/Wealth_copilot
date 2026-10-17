@@ -1,16 +1,80 @@
-# 环境变量与密钥(禁止上传)
+# ============================================================
+# 仓库根 .gitignore
+# 只管"全仓库公共规则"。子目录另有自己的规则，二者叠加生效：
+#   frontend/.gitignore      → node_modules / dist / *.log / *.local …
+#   backend/RAG_/.gitignore  → models/ cache/ db/ data/*（保留 data/samples）
+# 新增规则后请用这条自检：git ls-files -ci --exclude-standard
+# （输出任何文件 = 有已跟踪文件被新规则命中，需要 git rm --cached）
+# ============================================================
 
-# Python 编译与缓存文件
+# ---------- 密钥与环境变量（禁止上传） ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# ---------- Python 编译与缓存 ----------
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
+*.egg
 .venv/
 venv/
+env/
+build/
 
-# 测试与覆盖率
+# ---------- 测试 / 类型检查缓存 ----------
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+.hypothesis/
+.tox/
+.nox/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 
+# ---------- 运行时数据与临时产物 ----------
+# SQLite 库由 core/database/connection.py 启动时自动建表，不入库
+backend/db/
+*.db-journal
+*.db-wal
+*.db-shm
+# pip 在 Windows 下的构建缓存目录
+/.tmp/
+logs/
+*.log
+
+# ---------- Node / 前端 ----------
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+*.local
+
+# ---------- 编辑器 / IDE ----------
 .idea/
 .trae/
+.vscode/
+.fleet/
+.cursor/
+.claude/
+*.swp
+*.swo
+*~
+
+# ---------- 操作系统 ----------
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+desktop.ini

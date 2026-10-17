@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Activity, Circle, RefreshCw } from "lucide-react"
+import { Activity, Circle, Receipt, RefreshCw } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
@@ -10,7 +10,14 @@ import { cn } from "@/lib/utils"
 // 离线时每 15 秒探测一次，后端恢复后自动切回 online
 const OFFLINE_POLL_INTERVAL = 15000
 
-export function TopBar() {
+interface TopBarProps {
+  /** 打开/收起流水抽屉 */
+  onToggleTransactions: () => void
+  /** Agent 刚写过流水（未查看），按钮上点亮一个提示点 */
+  hasNewTransactions: boolean
+}
+
+export function TopBar({ onToggleTransactions, hasNewTransactions }: TopBarProps) {
   const [status, setStatus] = useState<BackendStatus>("checking")
   const [refreshing, setRefreshing] = useState(false)
 
@@ -53,6 +60,26 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggleTransactions}
+          className="relative inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-accent/50"
+          title="查看交易流水"
+          aria-label={
+            hasNewTransactions ? "查看交易流水（对话刚记了新记录）" : "查看交易流水"
+          }
+        >
+          <Badge variant="outline">
+            <Receipt className="h-3 w-3" />
+            流水
+          </Badge>
+          {hasNewTransactions && (
+            <span
+              aria-hidden="true"
+              className="absolute right-1 top-0 h-1.5 w-1.5 rounded-full bg-chart-3 ring-2 ring-background"
+            />
+          )}
+        </button>
         <BackendIndicator status={status} refreshing={refreshing} onRetry={refresh} />
         <ThemeToggle />
         <UserMenu />

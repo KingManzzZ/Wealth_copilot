@@ -65,6 +65,25 @@ export async function getBasicInfo(): Promise<BasicInfo> {
   return res.json()
 }
 
+/**
+ * 严格重拉：给「事件驱动的刷新」用（chat-turn-completed）。
+ *
+ * 与 getBasicInfo 的唯一区别是**不回退 mock**：把 mockBasicInfo 顶上真实资料，
+ * 比不刷新更糟——用户会看到姓名/城市凭空变成演示值。失败一律返回 null，
+ * 由调用方保持旧值。
+ */
+export async function refetchBasicInfo(): Promise<BasicInfo | null> {
+  const online = await detectBackendStatus()
+  if (online === "offline") return null
+  try {
+    const res = await fetch(`${API_BASE}/basic_info`)
+    if (!res.ok) return null
+    return (await res.json()) as BasicInfo
+  } catch {
+    return null
+  }
+}
+
 export async function upsertBasicInfo(data: Partial<BasicInfo>): Promise<BasicInfo> {
   const res = await fetch(`${API_BASE}/basic_info`, {
     method: "POST",
@@ -193,13 +212,22 @@ export async function upsertCashflow(
 // ============================================================
 export async function getTransactions(month?: string): Promise<Transaction[]> {
   const online = await detectBackendStatus()
-  if (online === "offline") return mockTransactions
+  if (online === "offline") return filterMockTransactions(month)
   const url = month
     ? `${API_BASE}/transactions?month=${encodeURIComponent(month)}`
     : `${API_BASE}/transactions`
   const res = await fetch(url)
-  if (!res.ok) return mockTransactions
+  if (!res.ok) return filterMockTransactions(month)
   return res.json()
+}
+
+/**
+ * mock 流水也按月份过滤：否则抽屉切到任何月份都显示同一批数据，
+ * 会造成"切月份没用"的假象（mock 模式本来就该看起来像真的）。
+ */
+function filterMockTransactions(month?: string): Transaction[] {
+  if (!month) return mockTransactions
+  return mockTransactions.filter((t) => t.occurred_at.slice(0, 7) === month)
 }
 
 export async function addTransaction(
@@ -230,6 +258,19 @@ export async function getDashboard(): Promise<DashboardData> {
   const res = await fetch(`${API_BASE}/dashboard`)
   if (!res.ok) return mockDashboard
   return res.json()
+}
+
+/** 严格重拉 dashboard；失败/离线返回 null（不回退 mock，理由见 refetchBasicInfo） */
+export async function refetchDashboard(): Promise<DashboardData | null> {
+  const online = await detectBackendStatus()
+  if (online === "offline") return null
+  try {
+    const res = await fetch(`${API_BASE}/dashboard`)
+    if (!res.ok) return null
+    return (await res.json()) as DashboardData
+  } catch {
+    return null
+  }
 }
 
 // ============================================================

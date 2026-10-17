@@ -2,6 +2,9 @@ import { useState, useRef, useCallback, useEffect } from "react"
 import { TopBar } from "@/components/top-bar"
 import { ChatPanel } from "@/components/chat/chat-panel"
 import { Dashboard } from "@/components/dashboard/dashboard"
+import { TransactionsDrawer } from "@/components/transactions/transactions-drawer"
+import { useChatTurnCompleted } from "@/hooks/useChatTurnCompleted"
+import { hasTransactionWrite } from "@/lib/events"
 import { cn } from "@/lib/utils"
 import type { ChatSide } from "@/types"
 
@@ -19,9 +22,23 @@ const DEFAULT_WIDTH = 400
 export function AppShell() {
   const [chatSide, setChatSide] = useState<ChatSide>("right")
   const [chatWidth, setChatWidth] = useState(DEFAULT_WIDTH)
+  const [transactionsOpen, setTransactionsOpen] = useState(false)
+  const [hasNewTransactions, setHasNewTransactions] = useState(false)
   const isDragging = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(0)
+
+  // Agent 记了账 → 顶栏「流水」按钮点亮提示点；打开抽屉即熄灭。
+  // 抽屉已经开着时不点亮（正在看，无需提示）。
+  useChatTurnCompleted((detail) => {
+    if (transactionsOpen) return
+    if (hasTransactionWrite(detail.toolNames)) setHasNewTransactions(true)
+  })
+
+  const toggleTransactions = useCallback(() => {
+    setTransactionsOpen((v) => !v)
+    setHasNewTransactions(false)
+  }, [])
 
   const toggleSide = () =>
     setChatSide((s) => (s === "left" ? "right" : "left"))
@@ -68,7 +85,10 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <TopBar />
+      <TopBar
+        onToggleTransactions={toggleTransactions}
+        hasNewTransactions={hasNewTransactions}
+      />
       <div
         className={cn(
           "flex min-h-0 flex-1",
@@ -95,6 +115,14 @@ export function AppShell() {
           <Dashboard />
         </main>
       </div>
+
+      {/* 流水抽屉：开在聊天栏的另一侧，避免盖住对话。
+          挂根层而非 header 内 —— 顶栏的 backdrop-filter 会成为 fixed 后代的包含块 */}
+      <TransactionsDrawer
+        open={transactionsOpen}
+        onClose={() => setTransactionsOpen(false)}
+        side={chatSide === "right" ? "left" : "right"}
+      />
     </div>
   )
 }
