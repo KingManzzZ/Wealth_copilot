@@ -58,7 +58,7 @@ def _collect(gen):
 # ======================================================================
 
 def check_answer_only_sequence():
-    fake = FakeOpenAI([_answer_only("你好，我是 WealthPilot。")])
+    fake = FakeOpenAI(_answer_only("你好，我是 WealthPilot。"))
     mod = _load_agent(fake)
     events = _collect(mod.chat_stream("你好"))
 
@@ -71,7 +71,7 @@ def check_answer_only_sequence():
 
 
 def check_done_when_no_tool_calls():
-    fake = FakeOpenAI([_answer_only("好的")])
+    fake = FakeOpenAI(_answer_only("好的"))
     mod = _load_agent(fake)
     events = _collect(mod.chat_stream("随便问问"))
     not_tool = [e for e in events if e["type"] in ("tool_call", "tool_start", "tool_result")]
@@ -180,7 +180,7 @@ def check_tool_result_backfilled_into_messages():
 
 
 def check_history_prepended():
-    fake = FakeOpenAI([_answer_only("嗯")])
+    fake = FakeOpenAI(_answer_only("嗯"))
     mod = _load_agent(fake)
     history = [
         {"role": "user", "content": "之前的问题"},
@@ -194,10 +194,23 @@ def check_history_prepended():
 
 
 def check_max_rounds_guard():
-    """模型无限调工具时必须中止（不能死循环）。"""
-    # 每轮都只有一个工具调用，永不结束
+    """模型无限调工具时必须中止（不能死循环）。
+
+    这里刻意让**工具名合法、只有参数非法**：参数错误不会触发"未知工具熔断"，
+    循环才会一路跑到 MAX_ROUNDS。熔断另有 check_unknown_tool_breaker_stops_early
+    覆盖——两者测的是不同的兜底，不能混在一处。
+    """
+    # 每轮都只有一个工具调用，参数各不相同（避免被"同参去重"拦掉），永不结束
     script = [
-        [_chunk(_Delta(tool_calls=[_tool_call_delta(0, f"call_{i}", "this_tool_does_not_exist", "{}")]))]
+        [
+            _chunk(
+                _Delta(
+                    tool_calls=[
+                        _tool_call_delta(0, f"call_{i}", "get_assets", f'{{"bogus_{i}": 1}}')
+                    ]
+                )
+            )
+        ]
         for i in range(20)
     ]
     fake = FakeOpenAI(script)
@@ -207,6 +220,7 @@ def check_max_rounds_guard():
     in_("error", types, "跑满轮次应报错中止")
     err = next(e for e in events if e["type"] == "error")
     in_(str(mod.MAX_ROUNDS), err["message"], "错误信息应包含最大轮次")
+    in_("仍未能完成", err["message"], "熔断文案应说明'未完成'，而不是只说轮次")
     eq(types[-1], "done")
     true(len(events) < 200, f"事件数应有界（实际 {len(events)}）")
     eq(types.count("done"), 1, "done 只应出现一次")
@@ -214,10 +228,104 @@ def check_max_rounds_guard():
 
 def check_stream_closed():
     """每轮流式响应都应被 close（否则连接泄漏）。"""
-    fake = FakeOpenAI([_answer_only("好")])
+    fake = FakeOpenAI(_answer_only("好"))
     mod = _load_agent(fake)
     _collect(mod.chat_stream("q"))
     true(all(s.closed for s in fake.streams), "所有流都应被关闭")
+
+
+# ======================================================================
+# 兜底机制（未知工具熔断 / 同参去重 / 参数降级）
+#
+# 对应 问题文档/Agent-工具调用可靠性.md 的 T1-1、T1-2、T2-1、T2-2。
+# ======================================================================
+
+
+def _unknown_tool_round(call_id: str, name: str):
+    """一轮脚本：调用一个不存在的工具。"""
+    return [
+        _chunk(_Delta(content="我来查一下。")),
+        _chunk(_Delta(tool_calls=[_tool_call_delta(0, call_id, name, "{}")])),
+    ]
+
+
+def check_unknown_tool_breaker_stops_early():
+    """连续两轮调用不存在的工具 → 应提前收敛，不跑满 MAX_ROUNDS。
+
+    依据：同一个错名错一次后，模型已经通过错误载荷拿到了 available_tools；
+    第二次还错说明它没理解反馈，继续重试只是烧轮次。
+    """
+    fake = FakeOpenAI(
+        [_unknown_tool_round("call_1", "nope_a"), _unknown_tool_round("call_2", "nope_b")]
+    )
+    mod = _load_agent(fake)
+    events = _collect(mod.chat_stream("查点东西"))
+
+    eq(
+        len(fake.requests),
+        mod.UNKNOWN_TOOL_LIMIT,
+        f"应在 {mod.UNKNOWN_TOOL_LIMIT} 轮后停止请求模型（熔断失效会跑满 {mod.MAX_ROUNDS}）",
+    )
+    eq(events[-1]["type"], "done", "熔断后仍应以 done 收尾")
+    eq([e["type"] for e in events].count("done"), 1, "done 只应出现一次")
+
+    err = next(e for e in events if e["type"] == "error")
+    in_("不存在的工具", err["message"], "熔断文案应归因到'工具名不存在'")
+    in_("answer", [e["type"] for e in events], "熔断后应给用户一句可读说明，而不是只丢 error")
+
+
+def check_duplicate_call_is_skipped():
+    """同名同参第二次出现应被跳过，且**不真正执行**（时机幻觉）。
+
+    注意 route 要打桩：真正的 get_assets 会触碰数据库，而这条用例验证的是
+    "去重拦截发生在执行之前"，与数据库无关。
+    """
+    from core.tools import tools_route
+
+    executed = []
+    real_route = tools_route.route
+
+    def fake_route(name, arguments):
+        executed.append((name, arguments))
+        return json.dumps({"ok": True}, ensure_ascii=False)
+
+    def _dup_round(call_id):
+        return [
+            _chunk(_Delta(content="查一下。")),
+            _chunk(_Delta(tool_calls=[_tool_call_delta(0, call_id, "get_assets", "{}")])),
+        ]
+
+    tools_route.route = fake_route
+    try:
+        fake = FakeOpenAI(
+            [_dup_round("call_1"), _dup_round("call_2"), *_answer_only("完成")]
+        )
+        mod = _load_agent(fake)
+        events = _collect(mod.chat_stream("q"))
+    finally:
+        tools_route.route = real_route
+
+    eq(len(executed), 1, "同一个 (name, args) 只应真正执行一次")
+
+    results = [e for e in events if e["type"] == "tool_result"]
+    eq(len(results), 2, "两次调用都应产生 tool_result（第二次是跳过提示）")
+    eq(results[-1]["status"], "error", "跳过时应标记为 error")
+    eq(results[-1]["result"]["error_kind"], "duplicate_call")
+
+    # 关键：跳过时也必须回填 role="tool"，否则 tool_calls 与 tool 消息数量对不上，
+    # 下一轮请求会被 API 拒绝。
+    third = fake.requests[2]["messages"]
+    tool_msgs = [m for m in third if m["role"] == "tool"]
+    eq(len(tool_msgs), 2, "两次调用的 tool 消息都应回填")
+
+
+def check_non_dict_arguments_downgraded():
+    """参数是合法 JSON 但非对象时，tool_call 事件的 arguments 仍应是 dict。"""
+    fake = FakeOpenAI(_one_tool_round("get_assets", "[1,2]"))
+    mod = _load_agent(fake)
+    events = _collect(mod.chat_stream("q"))
+    call = next(e for e in events if e["type"] == "tool_call")
+    eq(call["arguments"], {}, "非对象参数应降级为 {}，不能把 list 推给前端")
 
 
 # ======================================================================

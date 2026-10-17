@@ -269,6 +269,145 @@ def check_route_returns_json_string():
     json.loads(raw)  # 必须可解析
 
 
+# ======================================================================
+# 工具名归一化与分档模糊匹配（T1-2）
+# ======================================================================
+
+def check_route_normalizes_name_variants():
+    """同一个工具名的四种书写漂移都必须命中，不应报未知工具。
+
+    这类"近失"在真实的工具名幻觉里占比最高，而且**本不该失败**：模型并没有
+    编造名字，只是写法不同（大小写 / 驼峰 / 连字符 / 命名空间前缀）。
+    """
+    tools_route, _ = _load()
+    for variant in ("Get_Assets", "get-assets", "getAssets", "functions.get_assets"):
+        resolved, how = tools_route.resolve_tool_name(variant)
+        eq(resolved, "get_assets", f"{variant} 应解析到 get_assets")
+        eq(how, "normalized", f"{variant} 应走归一化命中")
+
+
+def check_route_repairs_readonly_near_miss():
+    """只读工具的轻微拼写错误允许自动修复。"""
+    tools_route, _ = _load()
+    eq(tools_route.resolve_tool_name("get_asset"), ("get_assets", "fuzzy"))
+    eq(tools_route.resolve_tool_name("serch_knowledge"), ("search_knowledge", "fuzzy"))
+
+
+def check_route_never_autorepairs_write_tools():
+    """写工具的近失名**绝不能**被自动修复（整个方案的安全底线）。
+
+    把 ``update_asset`` 猜成 ``update_debt`` 会静默执行一个错误的写操作——
+    调用成功、不报错、数据已改坏。代价远大于"多问模型一轮"。
+
+    所以这条用例不仅断言"没被修复"，还断言"**确实是近失名**"
+    （``_suggest_tool_names`` 能找到真身）——否则它可能只是因为相似度不够
+    而碰巧没命中，测不出真正的防线。
+    """
+    tools_route, _ = _load()
+
+    for variant, real in (
+        ("update_asst", "update_asset"),
+        ("record_asets", "record_asset"),
+        ("delete_transaction", "delete_transaction_tool"),
+    ):
+        resolved, how = tools_route.resolve_tool_name(variant)
+        eq(resolved, None, f"{variant} 不应被自动修复（会静默改坏数据）")
+        eq(how, "none", f"{variant} 不应命中任何一级")
+        in_(real, tools_route._suggest_tool_names(variant), f"{variant} 应能建议 {real}")
+        true(
+            not real.startswith(tools_route._READ_ONLY_PREFIXES),
+            f"{real} 是写工具，本就不该开放自动修复",
+        )
+
+
+# ======================================================================
+# 错误载荷的信息量（T1-1）
+# ======================================================================
+
+def check_route_unknown_tool_payload_is_actionable():
+    """未知工具的错误必须带可用清单与候选建议，否则模型只能瞎猜。
+
+    "盲重试"（什么都不喂就重发请求）命中率取决于随机性；把清单喂回去，
+    模型是在有信息的情况下重新决策——这是"重试"与"修复"的分界线。
+    """
+    tools_route, _ = _load()
+    payload = json.loads(tools_route.route("search_policy", "{}"))
+
+    eq(payload.get("unknown_tool"), True, "应打上 unknown_tool 标记（agent 据此熔断）")
+    eq(payload.get("error_kind"), "unknown_tool")
+    eq(payload.get("retryable"), True, "工具名错误是可重试的")
+    true(bool(payload.get("did_you_mean")), "应给出 did_you_mean")
+    in_("search_knowledge", payload["did_you_mean"], "search_policy 应建议 search_knowledge")
+    eq(
+        len(payload.get("available_tools") or []),
+        len(tools_route.TOOL_REGISTRY),
+        "available_tools 应与注册表等长（模型据此重选）",
+    )
+    true(bool(payload.get("hint")), "应给出 hint")
+
+
+# ======================================================================
+# 参数校验（T1-3）
+# ======================================================================
+
+def check_route_missing_required_argument():
+    """缺必填参数要给出结构化提示，而不是 Python 的 TypeError 原文。"""
+    tools_route, _ = _load()
+    payload = json.loads(tools_route.route("search_knowledge", "{}"))
+
+    in_("缺少必填参数", payload["error"])
+    eq(payload["missing_arguments"], ["query"])
+    eq(payload["error_kind"], "bad_arguments")
+    eq(payload["retryable"], True, "补上参数就能成功，应标记为可重试")
+
+
+def check_route_rejects_hallucinated_argument():
+    """schema 里没有的参数名应被拦下。
+
+    BFCL 的评测逻辑把"使用了函数文档外的参数"直接算作幻觉，所以在运行时
+    也不该放过去——它通常意味着模型对工具的理解有偏差。
+    """
+    tools_route, _ = _load()
+    payload = json.loads(tools_route.route("get_assets", '{"foo": 1}'))
+
+    in_("不支持的参数", payload["error"])
+    eq(payload["unknown_arguments"], ["foo"])
+    in_("allowed_arguments", payload, "应告诉模型能用哪些参数")
+
+
+def check_route_rejects_non_object_arguments():
+    """合法 JSON 但不是对象（数组 / 字符串 / null）也要给出人能看懂的错误。"""
+    tools_route, _ = _load()
+    for raw in ("[1,2]", "null", '"str"'):
+        payload = json.loads(tools_route.route("get_assets", raw))
+        in_("必须是 JSON 对象", payload["error"], f"{raw} 应被拒绝")
+        eq(payload["retryable"], True, f"{raw} 属于可重试的参数错误")
+
+
+def check_route_tool_exception_is_marked_not_retryable():
+    """工具内部异常应标记为**不可重试**，否则模型会拿它反复烧轮次。
+
+    这是"错误分级"的最小验证：确定性故障与参数错误必须能被区分。
+    """
+    tools_route, _ = _load()
+    real = tools_route.TOOL_REGISTRY.get("calculate_net_worth")
+    if real is None:
+        raise Skip("注册表里没有 calculate_net_worth")
+
+    def _boom(**kwargs):
+        raise RuntimeError("模拟确定性故障")
+
+    tools_route.TOOL_REGISTRY["calculate_net_worth"] = _boom
+    try:
+        payload = json.loads(tools_route.route("calculate_net_worth", "{}"))
+    finally:
+        tools_route.TOOL_REGISTRY["calculate_net_worth"] = real
+
+    eq(payload["error_kind"], "tool_exception")
+    eq(payload["retryable"], False, "工具内部异常默认不可重试")
+    in_("RuntimeError", payload["error"])
+
+
 def check_top_k_clamped():
     """top_k 越界应由工具夹紧，而不是把越界值传给检索器。
 
