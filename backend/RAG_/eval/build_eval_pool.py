@@ -239,7 +239,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="生成 chunk 级评估的候选池与人工标注模板（阈值校准第一步）"
     )
-    parser.add_argument("--config", default=None, help="配置文件路径（默认 ./config.yaml）")
+    parser.add_argument(
+        "--config", default=None, help="配置文件路径（默认 RAG_/config.yaml，与 CWD 无关）"
+    )
     parser.add_argument("--queries", required=True, help="评估集 JSONL 路径")
     parser.add_argument("--out", default="eval/pool", help="输出目录")
     parser.add_argument(

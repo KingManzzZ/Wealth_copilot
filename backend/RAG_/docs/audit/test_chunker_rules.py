@@ -1,7 +1,9 @@
 """临时脚本：验证切分器的标题处理行为 + 检查 PDF 真实标题层级。"""
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "src")
+# 按脚本位置定位 src/，不按 CWD
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from wealth_rag.config import load_settings
 from wealth_rag.ingestion.chunker import MarkdownChunker
 

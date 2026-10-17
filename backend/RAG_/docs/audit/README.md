@@ -5,19 +5,22 @@
 
 ## 用法
 
-在**项目根目录**执行（脚本依赖 `config.yaml` 与 `src/` 的相对路径）：
+**脚本本身可在任意目录运行**：它按自身位置定位 `src/` 与 `config.yaml`，不再依赖 CWD。
+默认读取模块根 `RAG_/config.yaml`；需要换配置时用环境变量覆盖。
+
+下面的示例以 `backend/` 为当前目录（脚本路径按此写）：
 
 ```powershell
-# 默认读取 ./config.yaml；也可用环境变量指向其它配置
+# 可选：指向另一份配置（绝对路径最稳；相对路径先按 CWD、再按 RAG 模块根解析）
 $env:WEALTH_RAG_CONFIG = ".\config.yaml"
 $env:PYTHONIOENCODING = "utf-8"      # Windows 下保证中文输出不乱码
 
-python docs\audit\dump_chunks.py            # 导出全部块的形态（含标题覆盖率、块类型分布）
-python docs\audit\diagnose_breadcrumb.py    # 面包屑质量诊断（深度分布、高频标题、页眉污染）
-python docs\audit\search_probe.py           # 真实检索实测（含同节重复检测）
-python docs\audit\test_chunker_rules.py     # 切分规则单测（标题层级 / overlap / PDF 标题层级）
-python docs\audit\test_heading_rules.py     # heading_rules 回归测试（纯规则，不加载模型，最快）
-python docs\audit\test_outline.py           # 章级大纲重建回归（12 章断言，不加载模型）
+python RAG_\docs\audit\dump_chunks.py            # 导出全部块的形态（含标题覆盖率、块类型分布）
+python RAG_\docs\audit\diagnose_breadcrumb.py    # 面包屑质量诊断（深度分布、高频标题、页眉污染）
+python RAG_\docs\audit\search_probe.py           # 真实检索实测（含同节重复检测）
+python RAG_\docs\audit\test_chunker_rules.py     # 切分规则单测（标题层级 / overlap / PDF 标题层级）
+python RAG_\docs\audit\test_heading_rules.py     # heading_rules 回归测试（纯规则，不加载模型，最快）
+python RAG_\docs\audit\test_outline.py           # 章级大纲重建回归（12 章断言，不加载模型）
 python docs\audit\verify_fix.py             # 验收：区分父块/子块的完整指标 + 章级覆盖率
 ```
 

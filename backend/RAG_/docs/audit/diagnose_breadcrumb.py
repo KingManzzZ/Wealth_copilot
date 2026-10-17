@@ -1,8 +1,10 @@
 """临时脚本：诊断 heading_path 结构、面包屑质量、标题与正文关系。"""
 import collections
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "src")
+# 按脚本位置定位 src/，不按 CWD
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from wealth_rag.config import load_settings
 from wealth_rag.store.qdrant_store import QdrantStore
 

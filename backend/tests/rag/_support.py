@@ -40,11 +40,23 @@ def env_flag(name: str) -> bool:
 
 
 def rag_config_path() -> Path:
-    """RAG 模块的 config.yaml 路径。"""
+    """RAG 模块的 config.yaml 路径（与 ``wealth_rag.paths`` 同一口径）。
+
+    优先级：``WEALTH_RAG_CONFIG`` → 模块根 ``RAG_/config.yaml``。
+    相对路径先按 CWD、再按 RAG 模块根，保证测试在仓库根与模块根之间切换时不失配。
+    """
+    root = BACKEND_DIR / "RAG_" / "config.yaml"
     env = os.environ.get("WEALTH_RAG_CONFIG")
-    if env:
-        return Path(env)
-    return BACKEND_DIR / "RAG_" / "config.yaml"
+    if not env:
+        return root
+    p = Path(env).expanduser()
+    if p.is_absolute():
+        return p
+    cwd_candidate = (Path.cwd() / p).resolve()
+    if cwd_candidate.exists():
+        return cwd_candidate
+    module_candidate = p if p.is_absolute() else (BACKEND_DIR / "RAG_" / p).resolve()
+    return module_candidate if module_candidate.exists() else cwd_candidate
 
 
 def has_rag_deps() -> bool:

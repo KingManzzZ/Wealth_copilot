@@ -36,9 +36,12 @@ from .evidence import (
 )
 
 # 本文件位置：backend/core/tools/tools_hub/rag_tools/impl.py
-# → parents[0]=rag_tools, [1]=tools_hub, [2]=tools, [3]=core, [4]=backend
+# ⚠️ 注意下标基准：``_THIS_DIR`` 已经取到 ``rag_tools/``，所以
+#    parents[0]=tools_hub, [1]=tools, [2]=core, [3]=backend
+#    （若从**文件名**开始数则是 [4]=backend —— 这里差一级，曾把
+#      DEFAULT_RAG_ROOT 算成 <仓库根>/RAG_，导致预热报"配置不存在"。）
 _THIS_DIR = Path(__file__).resolve().parent
-BACKEND_DIR = _THIS_DIR.parents[4]
+BACKEND_DIR = _THIS_DIR.parents[3]
 
 #: RAG 模块根目录（含 config.yaml 与 src/）
 DEFAULT_RAG_ROOT = BACKEND_DIR / "RAG_"

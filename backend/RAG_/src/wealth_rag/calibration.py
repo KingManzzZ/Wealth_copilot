@@ -540,7 +540,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="用实测 rerank 分数分布校准 no_answer_threshold / rerank_floor"
     )
-    parser.add_argument("--config", default=None, help="配置文件路径（默认 ./config.yaml）")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="配置文件路径（默认 RAG_/config.yaml，与 CWD 无关）",
+    )
     parser.add_argument(
         "--queries", default="eval/queries.graded.jsonl", help="带 grades 的评估集"
     )

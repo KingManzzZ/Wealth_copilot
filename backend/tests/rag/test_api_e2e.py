@@ -239,3 +239,97 @@ def check_health_endpoint():
     if resp.status_code == 404:
         raise Skip("未注册 /api/health")
     eq(resp.status_code, 200)
+
+
+# ======================================================================
+# 服务端权威路径（传 conversation_id）
+# ======================================================================
+
+
+def _assert_pairing(messages) -> None:
+    """结构性自检：assistant.tool_calls 必须与其后的 tool 消息一一对应。"""
+    pending = None
+    for m in messages:
+        if m["role"] == "assistant" and m.get("tool_calls"):
+            true(pending is None, "上一条 assistant 的 tool_calls 未被应答")
+            pending = {c["id"] for c in m["tool_calls"]}
+        elif m["role"] == "tool":
+            true(pending is not None, "孤儿 tool 消息")
+            true(m.get("tool_call_id") in pending, f"{m.get('tool_call_id')} 不在待应答集合")
+            pending.discard(m["tool_call_id"])
+            if not pending:
+                pending = None
+        else:
+            true(pending is None, "tool_calls 未应答就出现了新消息")
+    true(pending is None, f"仍有未应答：{pending}")
+
+
+def check_conversation_id_persists_and_replays():
+    """传 conversation_id → 后端自己读库、跑完落库，且历史可被正确回放。
+
+    这条用例覆盖 B 的核心：**历史的权威从客户端移到服务端**。
+    断言四件事：
+    1. 请求成功且流正常收尾；
+    2. 库里留下 user + assistant 两条（服务端写的，前端不再写）；
+    3. assistant 带上本轮工具调用**及其结果**；
+    4. 把库里的历史交给 ``prepare_history`` 能产出配对完整的协议消息（否则下次续聊 400）。
+
+    注意：需要**可写**的 SQLite。若环境不允许写库（沙箱 / 只读挂载），
+    本用例会 Skip 而不是报错——那属于环境限制，不是代码缺陷。
+    """
+    import sqlite3
+
+    # 先构造客户端：缺 fastapi/httpx 时这里就会 Skip，避免在无谓的环境里碰数据库
+    client, _ = _make_client(_tool_script())
+
+    from core.agent.context import prepare_history
+    from core.services.conversations import (
+        create_conversation,
+        delete_conversation,
+        get_conversation_messages,
+    )
+
+    try:
+        conv = create_conversation("测试-服务端权威")
+    except sqlite3.OperationalError as exc:
+        raise Skip(f"数据库不可写，跳过落库路径实测：{exc}")
+
+    cid = conv["id"]
+    try:
+        with client:
+            resp = client.post(
+                "/api/chat",
+                json={"message": "帮我查个东西", "conversation_id": cid},
+            )
+            eq(resp.status_code, 200, "带 conversation_id 的请求应成功")
+            _events, done = _parse_sse(resp.text)
+            true(done, "流应以 [DONE] 收尾")
+
+            rows = get_conversation_messages(cid) or []
+            eq([r["role"] for r in rows], ["user", "assistant"],
+               f"应落 user + assistant 两条，实际 {[r['role'] for r in rows]}")
+            eq(rows[0]["content"], "帮我查个东西", "用户消息应原样落库")
+
+            calls = rows[1].get("tool_calls") or []
+            true(len(calls) >= 1, "assistant 应带上本轮工具调用")
+            for c in calls:
+                true(c.get("result") is not None, f"工具结果应落库：{c.get('id')}")
+                true(c.get("status") in ("success", "error"), "状态应是终态，不能是 running")
+
+            # 回放：这轮历史必须能展开成配对完整的协议消息
+            history, _info = prepare_history(rows)
+            _assert_pairing(history)
+            eq(history[0]["role"], "user")
+    finally:
+        delete_conversation(cid)
+
+
+def check_unknown_conversation_returns_404():
+    """不存在的会话应明确 404，而不是静默新建一个。"""
+    client, _ = _make_client(_answer_script())
+    with client:
+        resp = client.post(
+            "/api/chat",
+            json={"message": "hi", "conversation_id": 2_000_000_000},
+        )
+    eq(resp.status_code, 404, "未知会话应返回 404")

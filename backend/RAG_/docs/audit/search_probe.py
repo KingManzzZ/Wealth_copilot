@@ -1,8 +1,10 @@
 """临时脚本：真实检索观测（只读副本），检查标题缺失与同节重复问题。"""
 import sys
 import collections
+from pathlib import Path
 
-sys.path.insert(0, "src")
+# 按脚本位置定位 src/，不按 CWD
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from wealth_rag.config import load_settings
 from wealth_rag.retrieval.hybrid import Retriever
 

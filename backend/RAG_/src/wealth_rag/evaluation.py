@@ -674,7 +674,9 @@ def compare_with_baseline(report: EvalReport, baseline_path: str | Path) -> None
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="chunk 级检索评估（含统计显著性）")
-    parser.add_argument("--config", default=None, help="配置文件路径（默认 ./config.yaml）")
+    parser.add_argument(
+        "--config", default=None, help="配置文件路径（默认 RAG_/config.yaml，与 CWD 无关）"
+    )
     parser.add_argument("--queries", default="eval/queries.jsonl", help="评估集 JSONL 路径")
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--no-rerank", action="store_true", help="关闭重排再评估")

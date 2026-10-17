@@ -2,12 +2,14 @@
 import collections
 import re
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "src")
+# 按脚本位置定位 src/，不按 CWD —— 从仓库根或任意目录执行都能找到
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from wealth_rag.config import load_settings
 from wealth_rag.store.qdrant_store import QdrantStore
 
-s = load_settings()  # 走 WEALTH_RAG_CONFIG
+s = load_settings()  # 默认模块根 config.yaml；可用 WEALTH_RAG_CONFIG 覆盖
 store = QdrantStore(s)
 client = store.client
 name = store.collection

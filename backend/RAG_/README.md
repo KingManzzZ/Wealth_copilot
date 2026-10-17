@@ -161,7 +161,10 @@ python -m wealth_rag.cli search "什么是再平衡策略？"
 | `rag eval [--queries eval/queries.jsonl] [--top-k 10] [--no-rerank]` | 运行评估集，输出 Recall@k / MRR / nDCG@k |
 | `rag info` | 知识库统计（设备、模型、文档数、切块数、稀疏词表） |
 
-所有命令均支持 `--config <路径>` 指定配置文件（默认 `./config.yaml`）。
+所有命令均支持 `--config <路径>` 指定配置文件。**默认配置与 CWD 无关**：
+未指定时依次找 `WEALTH_RAG_CONFIG` 环境变量、模块根 `RAG_/config.yaml`
+（定位逻辑集中在 [`paths.py`](./src/wealth_rag/paths.py)）。
+`config.yaml` 里的 `paths.*` 仍按**配置文件所在目录**解析。
 
 ### 作为 Python 库使用
 
@@ -169,7 +172,7 @@ python -m wealth_rag.cli search "什么是再平衡策略？"
 from wealth_rag.config import load_settings
 from wealth_rag.retrieval.hybrid import Retriever
 
-settings = load_settings("config.yaml")
+settings = load_settings()          # 默认模块根 config.yaml；也可显式传路径
 retriever = Retriever(settings)
 
 for hit in retriever.search("个人养老金的缴费上限是多少？", top_k=5):

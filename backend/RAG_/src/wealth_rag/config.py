@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field
 
-DEFAULT_CONFIG_NAME = "config.yaml"
+from .paths import DEFAULT_CONFIG_NAME, ENV_CONFIG, resolve_config_path  # noqa: F401  (对外再导出)
 
 #: PDF 的 CID→Unicode 映射表损坏时产生的乱码汉字（本项目语料实测）。
 #: 这些字符是**系统性**的——同一字形永远映射到同一个错字，且常插在词与词之间，
@@ -131,14 +130,21 @@ class Settings(BaseModel):
 
 
 def load_settings(config_path: str | Path | None = None) -> Settings:
-    """加载配置文件。默认读取项目根目录 config.yaml，可用环境变量 WEALTH_RAG_CONFIG 指定。"""
-    if config_path is None:
-        config_path = os.environ.get("WEALTH_RAG_CONFIG", DEFAULT_CONFIG_NAME)
-    path = Path(config_path).expanduser()
-    if not path.is_absolute():
-        path = (Path.cwd() / path).resolve()
-    if not path.exists():
-        raise FileNotFoundError(f"配置文件不存在: {path}")
+    """加载配置文件。
+
+    **定位与 CWD 无关**（规则见 ``paths.resolve_config_path``）：
+
+    1. 显式传入 ``config_path``；
+    2. 环境变量 ``WEALTH_RAG_CONFIG``；
+    3. 模块根 ``RAG_/config.yaml``。
+
+    无论哪种来源，``paths.*`` 里的**相对路径仍按配置文件所在目录解析**
+    （``settings.root = path.parent``）——这样把配置复制到别处做实验时，
+    相对路径跟着配置走，而不是跟着 CWD 走。
+
+    找不到文件时抛 ``FileNotFoundError``，并在消息里列出所有尝试过的路径。
+    """
+    path = resolve_config_path(config_path)
 
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     settings = Settings(**raw)

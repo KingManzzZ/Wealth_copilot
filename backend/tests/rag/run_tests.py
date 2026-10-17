@@ -52,6 +52,7 @@ TEST_MODULES = [
     "test_engine.py",  # 引擎逻辑（注入替身，无模型）
     "test_calibration_eval.py",  # 评估口径一致性 + 纳入 eval 自检
     "test_tool_contract.py",  # 工具注册契约（需 tools_route，会触发数据库）
+    "test_context.py",  # 历史回放与上下文裁剪（纯逻辑，无模型）
     "test_agent_events.py",  # Agent SSE 事件（需 openai + 假客户端）
     "test_api_e2e.py",  # 端到端 /api/chat（需 fastapi TestClient + 假 LLM）
     "test_real_rag.py",  # 真实模型 + 知识库（默认跳过）
