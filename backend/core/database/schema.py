@@ -18,7 +18,7 @@ SCHEMA_SQL: str = """
         -- ===================================================================
         -- 1. basic_info：用户基本信息表（原 financial_profiles 拆分）
         -- 单用户模式下只维护一行（id = user_id = OWNER_ID = 1）。
-        -- 不再含 monthly_income/monthly_expense（从 monthly_cashflow 派生）。
+        -- 不再含 monthly_income/monthly_expense（从 transactions 按月派生）。
         -- 不再含 profile_data JSON 列；所有字段都是原子列。
         -- ===================================================================
         CREATE TABLE IF NOT EXISTS basic_info (
@@ -99,26 +99,13 @@ SCHEMA_SQL: str = """
         CREATE INDEX IF NOT EXISTS ix_goals_user ON goals (user_id);
 
         -- ===================================================================
-        -- 5. monthly_cashflow：月度现金流汇总表（替代 dashboard 硬编码 CASHFLOW）
-        -- month 为 'YYYY-MM' 字符串；同一 user_id 下唯一。
-        -- ===================================================================
-        CREATE TABLE IF NOT EXISTS monthly_cashflow (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL DEFAULT 1,
-            month       TEXT    NOT NULL,
-            income      NUMERIC NOT NULL DEFAULT 0,
-            expense     NUMERIC NOT NULL DEFAULT 0,
-            created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-            updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(user_id, month)
-        );
-
-        CREATE INDEX IF NOT EXISTS ix_cashflow_user_month
-            ON monthly_cashflow (user_id, month);
-
-        -- ===================================================================
-        -- 6. transactions：单月收支详情表（交易流水）
+        -- 5. transactions：单月收支详情表（交易流水）
         -- 复用原 schema 字段并新增 user_id 列。
+        --
+        -- **这是收支的唯一数据源**：月度收入 / 支出 / 结余全部由它按
+        -- ``strftime('%Y-%m', occurred_at)`` 聚合派生（见 services/cashflow.py）。
+        -- 原来并存的 monthly_cashflow 汇总表已删除——同一事实存两份且无同步，
+        -- 会让"记了流水"与"月结余不变"同时成立（BK-27 / G-11）。
         -- ===================================================================
         CREATE TABLE IF NOT EXISTS transactions (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,7 +127,7 @@ SCHEMA_SQL: str = """
             ON transactions (user_id, transaction_type, category);
 
         -- ===================================================================
-        -- 7. conversations：对话表
+        -- 6. conversations：对话表
         -- 保存 Agent 对话会话及摘要。
         -- ===================================================================
         CREATE TABLE IF NOT EXISTS conversations (
@@ -155,7 +142,7 @@ SCHEMA_SQL: str = """
         );
 
         -- ===================================================================
-        -- 8. messages：消息表
+        -- 7. messages：消息表
         -- 保存用户、Agent 和工具之间的消息。
         -- 删除对话时级联删除关联消息。
         -- ===================================================================
@@ -176,9 +163,36 @@ SCHEMA_SQL: str = """
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """在给定连接上执行建表脚本（幂等；失败异常向上抛出）。"""
+    """在给定连接上执行建表脚本（幂等；失败异常向上抛出），并清理遗留表。"""
     conn.executescript(SCHEMA_SQL)
+    _drop_legacy_cashflow(conn)
     conn.commit()
+
+
+def _drop_legacy_cashflow(conn: sqlite3.Connection) -> None:
+    """删除 v0.5 之前的 ``monthly_cashflow`` 汇总表。
+
+    月度收支已改为由 ``transactions`` 聚合派生，这张表不再被任何代码读写；
+    留着它等于给"手写汇总"留了一个后门，会重新制造"两份收支"的问题。
+
+    **只在表为空时删除**：非空说明库里有历史手工汇总，宁可保留并告警让人处理，
+    也不能静默丢数据（它是旧版本里唯一记录过汇总数据的地方）。
+    """
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM monthly_cashflow").fetchone()
+    except sqlite3.OperationalError:
+        return  # 表不存在（新库），无需处理
+
+    count = row[0] if row else 0
+    if count == 0:
+        conn.execute("DROP TABLE monthly_cashflow")
+        print("[schema] 已删除遗留的 monthly_cashflow 表（改为由 transactions 派生）")
+        return
+
+    print(
+        f"[schema] ⚠️ 遗留 monthly_cashflow 表含 {count} 行手工汇总，已停止使用但未删除。"
+        "如需保留这些数字，请转成 transactions 流水后手工删表。"
+    )
 
 
 def init_db() -> None:

@@ -356,19 +356,23 @@ TOOLS_SCHEMA = [
     },
 
     # =========================================================
-    # 6. 现金流工具（cashflow_tools.py）
+    # 6. 现金流工具（cashflow_tools.py）—— 只读，数据由流水聚合
     # =========================================================
     {
         "type": "function",
         "function": {
             "name": "get_monthly_cashflow",
-            "description": "获取月度现金流汇总。months=1 返回最近一个月 dict；>1 返回 list。",
+            "description": (
+                "获取月度现金流汇总（由收支流水按月聚合，结余为派生值）。"
+                "months=1 返回最近一个月的 dict；>1 返回最近 N 个月的 list。"
+                "无流水的月份不会出现。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "months": {
                         "type": "number",
-                        "description": "取最近 N 个月，默认 1",
+                        "description": "取最近 N 个有流水的月份，默认 1",
                     },
                 },
                 "required": [],
@@ -379,7 +383,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "calculate_savings_rate",
-            "description": "计算储蓄率 = (income - expense) / income。不传 month 则取最近一个月。",
+            "description": "计算储蓄率 = (income - expense) / income，数据由流水按月聚合。不传 month 则取最近一个月的数字。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -389,22 +393,6 @@ TOOLS_SCHEMA = [
                     },
                 },
                 "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "set_monthly_cashflow",
-            "description": "UPSERT 某月现金流汇总（主要用于测试或数据补录）。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "month": {"type": "string", "description": "月份 'YYYY-MM'"},
-                    "income": {"type": "number", "description": "月收入合计（元）"},
-                    "expense": {"type": "number", "description": "月支出合计（元）"},
-                },
-                "required": ["month", "income", "expense"],
             },
         },
     },

@@ -9,14 +9,12 @@ import type {
   Debts,
   FinancialGoal,
   HistoryMessage,
-  MonthlyCashflow,
   StoredMessage,
   Transaction,
 } from "@/types"
 import {
   mockAssets,
   mockBasicInfo,
-  mockCashflow,
   mockDashboard,
   mockDebts,
   mockGoals,
@@ -184,28 +182,12 @@ export async function deleteGoal(goalId: string): Promise<void> {
 
 // ============================================================
 // Cashflow
+// 月度现金流是**派生数据**：后端由 transactions 按月聚合得出，
+// 因此没有独立的读写客户端。要改数字请写流水（addTransaction），
+// 要读汇总请用 getDashboard().cashflow / .kpis。
+// （原 getCashflow / upsertCashflow 是死代码：从未被任何组件调用，
+//   upsertCashflow 对应的 POST /api/cashflow 也已在后端下线。）
 // ============================================================
-export async function getCashflow(months = 6): Promise<MonthlyCashflow[]> {
-  const online = await detectBackendStatus()
-  if (online === "offline") return mockCashflow
-  const res = await fetch(`${API_BASE}/cashflow?months=${months}`)
-  if (!res.ok) return mockCashflow
-  return res.json()
-}
-
-export async function upsertCashflow(
-  month: string,
-  income: number,
-  expense: number,
-): Promise<MonthlyCashflow> {
-  const res = await fetch(`${API_BASE}/cashflow`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ month, income, expense }),
-  })
-  if (!res.ok) throw new Error(`upsert cashflow failed: ${res.status}`)
-  return res.json()
-}
 
 // ============================================================
 // Transactions

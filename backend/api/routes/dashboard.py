@@ -2,8 +2,7 @@
 Dashboard 接口（路由层）。
 
 聚合各子 service 的数据返回前端仪表盘所需的复合结构。
-不再硬编码 CASHFLOW，改为读 monthly_cashflow 表；
-KPI 不再从 profile 派生，改为从 cashflow 派生（取最近一个月）。
+KPI 与现金流图全部由 transactions 按月聚合派生（不再有 monthly_cashflow 汇总表），
 health 仍用静态（动态计算待后续迭代）。
 """
 

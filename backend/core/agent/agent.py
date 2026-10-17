@@ -1,6 +1,8 @@
 import os
 import json
 
+from datetime import datetime
+
 from ..tools import tools_route, tools_schema
 from .prompt import SYSTEM_PROMPT
 
@@ -22,13 +24,31 @@ client = OpenAI(
         api_key=os.getenv("LLM_API_KEY"),
         base_url=os.getenv("LLM_URL"))
 
+_WEEKDAYS = "一二三四五六日"
+
+
+def _system_content() -> str:
+    """系统提示 + 当前日期锚点。
+
+    模型自己不知道"今天"是哪天，而"本月""昨天"这类相对时间必须落到正确的
+    月份才能记账（``occurred_at`` 决定流水归哪个月，进而决定月结余算哪个月）。
+    不注入日期时，模型只能猜一个日期，账就会记到错误的月份上。
+    """
+    now = datetime.now()
+    return (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"当前日期：{now.year} 年 {now.month} 月 {now.day} 日"
+        f"（星期{_WEEKDAYS[now.weekday()]}）。"
+        "「今天」「本月」「上个月」等相对时间一律以此为准。"
+    )
+
 
 
 def chat_stream(message, history=None):
 
     #messages为需要维护的总体消息列表
     messages:list[ChatCompletionMessageParam]=[
-        {"role":"system","content":SYSTEM_PROMPT},
+        {"role":"system","content":_system_content()},
     ]
 
     if history:

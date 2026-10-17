@@ -1,111 +1,106 @@
 """
-月度现金流 Service 层。
+月度现金流（**派生视图**）Service 层。
 
-职责：管理 monthly_cashflow 表，替代 dashboard 原硬编码 CASHFLOW。
-单用户模式下 user_id 固定为 OWNER_ID = 1。
-monthly_income / monthly_expense 不再存为 basic_info 字段，由本 service 派生。
+## 结余不是字段
+
+``surplus = income - expense``，由本模块在查询时现算。库里既没有 ``surplus`` 列，
+也没有 ``monthly_cashflow`` 汇总表（v0.5 起删除）。
+
+## 唯一数据源是 transactions
+
+记账只能逐笔写 ``transactions``；月度收入 / 支出 / 结余全部由它按月聚合得出。
+这样"Agent 记了一笔支出"与"仪表盘月结余"在结构上不可能再不一致。
+
+旧设计的病根是**同一事实存两份且无同步**：``record_expense`` 只写流水，
+而 dashboard KPI 读 ``monthly_cashflow`` 汇总表 → 用户记了账，月结余纹丝不动，
+会认为"Agent 没记住"（BK-27 / G-11）。改成派生后该问题从结构上消失，
+也顺带不再需要一个"主要用于测试"的 ``set_monthly_cashflow`` 写入工具。
+
+## 月份的来源
+
+月份取自流水的 ``occurred_at``（``'YYYY-MM-DDTHH:MM:SS'``）前 7 位。
+``strftime('%Y-%m', occurred_at)`` 对 ISO 8601 字符串有效，且能吃到
+``ix_transactions_user_occurred`` 之外的分组代价（数据量级为个人账本，可忽略）。
 """
 
 from core.database import get_connection
-from core.services._common import OWNER_ID, _now
+from core.services._common import OWNER_ID
+
+#: 月份表达式（与 transactions.occurred_at 的 ISO 8601 格式对齐）
+_MONTH_EXPR = "strftime('%Y-%m', occurred_at)"
+
+#: 按月聚合的基础查询：收入、支出分别求和；无该类型流水时记 0
+_AGG_SQL = f"""
+    SELECT {_MONTH_EXPR} AS month,
+           SUM(CASE WHEN transaction_type = 'income'  THEN amount ELSE 0 END) AS income,
+           SUM(CASE WHEN transaction_type = 'expense' THEN amount ELSE 0 END) AS expense
+    FROM transactions
+    WHERE user_id = ?
+"""
 
 
-def list_cashflow(months: int = 6) -> list:
-    """取最近 N 个月的月度现金流汇总，按月份升序。
-
-    返回 [{month, income, expense, surplus}, ...]，surplus 派生 = income - expense。
-    """
-    conn = get_connection()
-    try:
-        rows = conn.execute(
-            """
-            SELECT month, income, expense
-            FROM monthly_cashflow
-            WHERE user_id = ?
-            ORDER BY month DESC
-            LIMIT ?
-            """,
-            (OWNER_ID, months),
-        ).fetchall()
-    finally:
-        conn.close()
-    # 反转为升序（最近月在末），便于前端折线图横轴从左到右递增
-    rows = list(reversed(rows))
-    return [
-        {
-            "month": row["month"],
-            "income": row["income"],
-            "expense": row["expense"],
-            "surplus": row["income"] - row["expense"],
-        }
-        for row in rows
-    ]
-
-
-def upsert_cashflow(month: str, income: float, expense: float) -> dict:
-    """UPSERT 某月现金流汇总：month 格式 'YYYY-MM'。"""
-    conn = get_connection()
-    try:
-        conn.execute(
-            """
-            INSERT INTO monthly_cashflow (user_id, month, income, expense, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, month) DO UPDATE SET
-                income = excluded.income,
-                expense = excluded.expense,
-                updated_at = excluded.updated_at
-            """,
-            (OWNER_ID, month, income, expense, _now()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+def _to_row(row) -> dict:
+    """聚合行 → 对外 dict；``surplus`` 永远现算，不来自存储。"""
+    income = row["income"] or 0
+    expense = row["expense"] or 0
     return {
-        "month": month,
+        "month": row["month"],
         "income": income,
         "expense": expense,
         "surplus": income - expense,
     }
 
 
-def get_latest_month() -> dict | None:
-    """取最近一个月的现金流；无数据返回 None。
+def list_cashflow(months: int = 6) -> list:
+    """取最近 N 个**有流水**的月份汇总，按月份升序。
 
-    dashboard KPI 派生用：monthly_income / monthly_expense 从此派生。
+    返回 ``[{month, income, expense, surplus}, ...]``；没有流水的月份不会出现
+    （不做零填充：零填充会让"没有数据"和"收入支出都为 0"看起来一样）。
+    """
+    months = max(1, int(months))
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            _AGG_SQL + " GROUP BY month ORDER BY month DESC LIMIT ?",
+            (OWNER_ID, months),
+        ).fetchall()
+    finally:
+        conn.close()
+    # 反转为升序（最近月在末），便于前端折线图横轴从左到右递增
+    return [_to_row(row) for row in reversed(rows)]
+
+
+def get_latest_month() -> dict | None:
+    """取最近一个有流水的月份汇总；无任何流水返回 None。
+
+    dashboard KPI（monthly_income / monthly_expense / monthly_surplus / saving_rate）
+    与应急资金测算都从这里取"最近一个月"。
     """
     conn = get_connection()
     try:
         row = conn.execute(
-            """
-            SELECT month, income, expense
-            FROM monthly_cashflow
-            WHERE user_id = ?
-            ORDER BY month DESC
-            LIMIT 1
-            """,
+            _AGG_SQL + " GROUP BY month ORDER BY month DESC LIMIT 1",
             (OWNER_ID,),
         ).fetchone()
     finally:
         conn.close()
-    if row is None:
+    return _to_row(row) if row is not None else None
+
+
+def get_month_cashflow(month: str) -> dict | None:
+    """取指定月份（``'YYYY-MM'``）汇总；该月无流水返回 None。
+
+    ``calculate_savings_rate`` 用它替代原先"拉 36 个月再线性查找"的做法——
+    后者在流水跨度超过 36 个月时会静默给不出结果。
+    """
+    if not month:
         return None
-    return {
-        "month": row["month"],
-        "income": row["income"],
-        "expense": row["expense"],
-        "surplus": row["income"] - row["expense"],
-    }
-
-
-def delete_cashflow(month: str) -> bool:
-    """删除某月现金流汇总；返回是否实际删除。"""
     conn = get_connection()
     try:
-        cur = conn.execute(
-            "DELETE FROM monthly_cashflow WHERE user_id = ? AND month = ?",
+        row = conn.execute(
+            _AGG_SQL + f" AND {_MONTH_EXPR} = ? GROUP BY month",
             (OWNER_ID, month),
-        )
-        conn.commit()
-        return cur.rowcount > 0
+        ).fetchone()
     finally:
         conn.close()
+    return _to_row(row) if row is not None else None

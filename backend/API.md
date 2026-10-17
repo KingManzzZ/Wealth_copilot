@@ -68,7 +68,7 @@
 | `supporting_parents` | string | 赡养父母情况 | `"需赡养父母一方"` |
 | `last_updated` | string | 服务端写入时间，客户端只读 | `"2026-09-23T10:30:00"` |
 
-> **不再包含**：`monthly_income` / `monthly_expense`（已从 `monthly_cashflow` 派生）；`assets` / `debts` / `goals`（拆为独立接口）。
+> **不再包含**：`monthly_income` / `monthly_expense`（已从 `transactions` 按月派生）；`assets` / `debts` / `goals`（拆为独立接口）。
 
 ### 2.3 资产（assets 表）
 
@@ -102,19 +102,23 @@
 - POST body：完整 `FinancialGoal` 对象，按 `id` UPSERT
 - DELETE `/api/goals/{goal_id}`
 
-### 2.6 月度现金流（monthly_cashflow 表）
+### 2.6 月度现金流（派生视图，**无独立表**）
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `month` | string | `YYYY-MM` 格式，如 `2026-09` |
-| `income` | number | 当月收入合计（元） |
-| `expense` | number | 当月支出合计（元） |
-| `surplus` | number | 派生字段：income - expense |
+| `month` | string | `YYYY-MM` 格式，取自流水的 `occurred_at` |
+| `income` | number | 当月收入流水合计（元） |
+| `expense` | number | 当月支出流水合计（元） |
+| `surplus` | number | 派生字段：`income - expense`，**不存储** |
 
-- GET `/api/cashflow?months=6`：取最近 N 个月（默认 6，上限 36），按月份升序返回
-- POST body：`{ "month": "2026-09", "income": 18000, "expense": 9500 }` —— UPSERT，按 (user_id, month) 唯一
+- GET `/api/cashflow?months=6`：取最近 N 个**有流水**的月份（默认 6，上限 36），按月份升序返回
+- **没有写接口**。月度汇总由 `transactions` 按月聚合派生（`core/services/cashflow.py`）；
+  要改数字只能写逐笔流水（`POST /api/transactions`）。
+  `POST /api/cashflow` 与 `set_monthly_cashflow` 工具已于 v0.5 下线——
+  两套写入口会让"记了流水"与"月结余不变"同时成立（BK-27 / G-11）。
 
-> dashboard 的 KPI（monthly_income / monthly_expense / saving_rate）从最近一个月的 monthly_cashflow 派生。
+> dashboard 的 KPI（monthly_income / monthly_expense / monthly_surplus / saving_rate）
+> 取**最近一个有流水的月份**聚合结果。
 
 ### 2.7 交易流水（transactions 表）
 
@@ -186,7 +190,7 @@
 }
 ```
 
-KPI 派生规则：取 `monthly_cashflow` 表最近一月的 `income` / `expense`，`surplus = income - expense`，`saving_rate = surplus / income`（income 为 0 时置 0）。
+KPI 派生规则：取**最近一个有流水的月份**，`income` / `expense` 为该月流水按类型求和，`surplus = income - expense`，`saving_rate = surplus / income`（income 为 0 时置 0）。没有任何流水时四项全为 0。
 
 ### 2.11 会话（conversations / messages 表）
 
@@ -226,7 +230,7 @@ GPT 式多会话：会话行**惰性创建**（发出首条消息时才建，空
 
 ## 4. 数据存储约定（后端内部）
 
-v0.4 起按关系建模拆为 6 张表，每张表都带 `user_id` 列（INTEGER NOT NULL DEFAULT 1）为多用户扩展铺路：
+v0.4 起按关系建模拆分，每张表都带 `user_id` 列（INTEGER NOT NULL DEFAULT 1）为多用户扩展铺路；v0.5 起删除 `monthly_cashflow` 汇总表（月度现金流改为由流水派生）：
 
 | 表 | 用途 | 关键字段 |
 |---|---|---|
@@ -234,8 +238,7 @@ v0.4 起按关系建模拆为 6 张表，每张表都带 `user_id` 列（INTEGER
 | `assets` | 资产明细，多行 | id, user_id, name, value |
 | `debts` | 债务明细，多行 | id, user_id, name, remaining, monthly_payment |
 | `goals` | 财富目标，多行 | id, user_id, goal_id, name, target, current, deadline, priority |
-| `monthly_cashflow` | 月度现金流汇总 | id, user_id, month, income, expense |
-| `transactions` | 交易流水明细 | id, user_id, transaction_type, amount, category, source, occurred_at, note |
+| `transactions` | 交易流水明细（**收支唯一数据源**） | id, user_id, transaction_type, amount, category, source, occurred_at, note |
 | `conversations` | 对话会话（v0.6 启用） | id, user_id, title, summary, status, created_at, updated_at |
 | `messages` | 会话消息（v0.6 启用） | id, conversation_id (CASCADE), role, content, tool_calls, tool_name, created_at |
 
@@ -243,7 +246,6 @@ UNIQUE 约束：
 - `basic_info`：`id`（单行模式固定为 OWNER_ID）
 - `assets` / `debts`：`(user_id, name)`
 - `goals`：`(user_id, goal_id)`
-- `monthly_cashflow`：`(user_id, month)`
 
 建表脚本见 `core/database/schema.py`（连接管理见 `core/database/connection.py`），各表读写逻辑在 `core/services/{basic_info,assets,debts,goals,cashflow,transactions}.py`。共用工具在 `core/services/_common.py`。
 
@@ -257,3 +259,4 @@ UNIQUE 约束：
 | 2026-09-23 | v0.4 | **全表拆分重构**：废弃 `financial_profiles.profile_data` JSON 单列设计，按关系建模拆为 6 张独立表（basic_info / assets / debts / goals / monthly_cashflow / transactions）；废弃 `/api/profile` 聚合端点，按子资源拆为 6 组 RESTful 端点；`monthly_income`/`monthly_expense` 不再存为字段，由 `monthly_cashflow` 派生；每张表预埋 `user_id` 列；dashboard 改为从子 service 聚合数据，删除硬编码 CASHFLOW |
 | 2026-09-23 | v0.5 | **算法字段隔离**：`risk_tolerance` 更名展示为"风险承受能力"；新增 `investment_preference`（投资偏好）列；`risk_tolerance`/`investment_preference`/`liquidity_needs` 三个字段标记为算法估算，从 `BASIC_INFO_FIELDS` 可写白名单和 `update_basic_info` tool 参数中移除；前端 ProfileCard 实现行内编辑（可编辑字段点击直接修改），三个算法字段只读展示 |
 | 2026-09-24 | v0.6 | **会话持久化（GPT 式多会话）**：启用预留的 conversations/messages 两张表，新增 5 个 RESTful 端点（列表/创建/懒加载消息/批量追加/删除级联）；会话行惰性创建；消息按 UI 结构嵌套存储（assistant.tool_calls 存完整 JSON）；前端 useChat 升级为会话感知，localStorage 仅存当前会话 id，刷新自动恢复，历史下拉支持切换与删除；后端离线时 mock 对话不落库 |
+| 2026-10-18 | v0.7 | **月度现金流改为派生（单一数据源）**：删除 `monthly_cashflow` 表与 `POST /api/cashflow`、下线 `set_monthly_cashflow` 工具；`GET /api/cashflow` 与 dashboard KPI 改为由 `transactions` 按月聚合，`surplus` 永远现算；修复"Agent 记了流水但月结余不变"（BK-27 / G-11）。前端移除从未被调用的 `getCashflow` / `upsertCashflow`。Agent 侧新增「财务数据写入」提示词规则并注入当前日期 |

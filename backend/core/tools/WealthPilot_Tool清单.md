@@ -34,12 +34,14 @@
 | 5 | `get_transactions` | 按时间、类型、类别等条件查询收入和支出流水。`transaction_tools.py` | 已完成 |
 | 6 | `update_transaction` | 修改已有流水，例如修正金额、日期或分类。**注：实现名为** `update_transaction_tool`（避免与 service 层函数同名冲突）。`transaction_tools.py` | 已完成 |
 | 7 | `delete_transaction` | 删除用户确认要删除的错误流水。**注：实现名为** `delete_transaction_tool`（避免与 service 层函数同名冲突）。`transaction_tools.py` | 已完成 |
-| 8 | `get_monthly_cashflow` | 统计指定月份的收入、支出、结余及储蓄率。`cashflow_tools.py` | 已完成 |
-| 9 | `set_monthly_cashflow` | UPSERT 某月现金流汇总（主要用于测试或数据补录）。`cashflow_tools.py`。**新增工具** | 已完成 |
+| 8 | `get_monthly_cashflow` | 统计指定月份的收入、支出、结余及储蓄率（由流水按月聚合派生）。`cashflow_tools.py` | 已完成 |
 
 **设计要点：**
 - 收入和支出流水应与用户当前财务画像分开存储。
 - 月度现金流等确定性结果由 Python/SQL 计算，不依赖 LLM 心算。
+- **月度现金流是派生值，没有写工具**：`transactions` 是收支唯一数据源，结余 = 收入合计 − 支出合计，
+  由 `core/services/cashflow.py` 现算。原 `set_monthly_cashflow`（自述"主要用于测试或数据补录"）
+  已下线——它与流水构成第二份"真相"，会造成"记了账但月结余不变"。
 - 对金额、日期、分类存在歧义的输入，应先追问或确认。
 - 写入前使用 Pydantic 校验参数，并由 Service 层执行业务规则。
 
@@ -239,7 +241,7 @@
 
 ## 附：当前实现统计
 
-**已实现工具：23 个**（分布在 6 个 `tools_hub` 模块中）
+**已实现工具：22 个**（分布在 6 个 `tools_hub` 模块中）
 
 | 模块 | 工具数 | 工具列表 |
 |------|--------|----------|
@@ -248,7 +250,7 @@
 | `debt_tools.py` | 3 | `get_debts`, `record_debt`, `update_debt` |
 | `goal_tools.py` | 5 | `create_goal`, `get_goals`, `update_goal`, `complete_goal_tool`, `calculate_goal_contribution` |
 | `transaction_tools.py` | 5 | `record_income`, `record_expense`, `get_transactions`, `update_transaction_tool`, `delete_transaction_tool` |
-| `cashflow_tools.py` | 3 | `get_monthly_cashflow`, `calculate_savings_rate`, `set_monthly_cashflow` |
+| `cashflow_tools.py` | 2 | `get_monthly_cashflow`, `calculate_savings_rate` |
 
 **暂未实现工具：34 个**
 

@@ -1,7 +1,7 @@
 """兜底策略自检脚本 —— 在改动生产代码前先验证骨架行为。
 
 作用：把 [02-落地方案与代码骨架.md](02-落地方案与代码骨架.md) 第 1 章的
-名称归一化 / 分档模糊匹配 / 参数校验逻辑，用本项目**真实的 24 个工具名**
+名称归一化 / 分档模糊匹配 / 参数校验逻辑，用本项目**真实的 23 个工具名**
 跑一遍，确认行为与文档描述一致，再往 `core/tools/tools_route.py` 里搬。
 
 为什么值得单独跑一次：模糊匹配的阈值很反直觉（详见骨架文档 1.4 节），
@@ -32,7 +32,7 @@ TOOL_REGISTRY = {
         "complete_goal_tool", "calculate_goal_contribution", "record_income",
         "record_expense", "get_transactions", "update_transaction_tool",
         "delete_transaction_tool", "get_monthly_cashflow", "calculate_savings_rate",
-        "set_monthly_cashflow", "search_knowledge",
+        "search_knowledge",
     ]
 }
 
@@ -207,7 +207,7 @@ def main() -> int:
     p = r("search_policy")
     check("unknown_tool=True", p.get("unknown_tool") is True)
     check("有 did_you_mean", bool(p.get("did_you_mean")))
-    check("有 available_tools", len(p.get("available_tools") or []) == 24)
+    check("有 available_tools", len(p.get("available_tools") or []) == 23)
     check("有 hint", bool(p.get("hint")))
 
     print("[5] 参数校验：用 schema 而不是 Python 报错")

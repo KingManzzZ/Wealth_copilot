@@ -9,9 +9,8 @@ from core.services.debts import list_debts, upsert_debt, delete_debt
 from core.services.goals import list_goals, upsert_goal, delete_goal
 from core.services.cashflow import (
     list_cashflow,
-    upsert_cashflow,
     get_latest_month,
-    delete_cashflow,
+    get_month_cashflow,
 )
 from core.services.transactions import (
     list_transactions,
