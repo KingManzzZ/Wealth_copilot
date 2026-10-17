@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
-  appendConversationMessages,
   createConversation,
   deleteConversationApi,
   fetchConversationMessages,
@@ -10,7 +9,6 @@ import {
 import type {
   ChatMessage,
   ChatStreamEvent,
-  ConversationMessageInput,
   ConversationMeta,
   HistoryMessage,
   StoredMessage,
@@ -79,18 +77,6 @@ function toChatMessage(m: StoredMessage): ChatMessage {
     toolCalls: m.tool_calls ?? [],
     createdAt: Date.now(),
   }
-}
-
-/** 前端消息 → 写入条目（assistant 带 toolCalls 完整 UI 结构，空则不带字段） */
-function toInput(m: ChatMessage): ConversationMessageInput {
-  const item: ConversationMessageInput = {
-    role: m.role as "user" | "assistant",
-    content: m.content,
-  }
-  if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
-    item.tool_calls = m.toolCalls
-  }
-  return item
 }
 
 /**
@@ -191,8 +177,6 @@ export function useChat() {
         toolCalls: [],
         createdAt: Date.now(),
       }
-      const userMsgId = userMsg.id
-      const assistantMsgId = assistantMsg.id
       assistantIdRef.current = assistantMsg.id
 
       const history = buildHistory(messagesRef.current)
@@ -201,7 +185,7 @@ export function useChat() {
       setIsStreaming(true)
 
       try {
-        for await (const evt of streamChat(trimmed, history)) {
+        for await (const evt of streamChat(trimmed, history, convId)) {
           const current = messagesRef.current
           syncRef(
             current.map((m) =>
@@ -237,19 +221,11 @@ export function useChat() {
         setIsStreaming(false)
         assistantIdRef.current = null
 
-        // 本轮消息落库：每轮一次批量写入；空壳 assistant 已被移除时只存 user 条
+        // 本轮消息落库已**移交后端**：POST /api/chat 在服务端读历史、裁剪，
+        // 并在流结束时把 user + assistant 写入 messages 表。
+        // 前端若再写一次就会产生重复消息（双写），所以这里只刷新会话列表（标题/排序会变）。
         if (convId !== null) {
-          const currentUser = messagesRef.current.find((m) => m.id === userMsgId)
-          const finalAssistant = messagesRef.current.find(
-            (m) => m.id === assistantMsgId
-          )
-          const items: ConversationMessageInput[] = []
-          if (currentUser) items.push(toInput(currentUser))
-          if (finalAssistant) items.push(toInput(finalAssistant))
-          if (items.length > 0) {
-            await appendConversationMessages(convId, items)
-          }
-          void refreshConversations() // 标题/排序可能变化
+          void refreshConversations()
         }
       }
     },

@@ -316,10 +316,14 @@ export async function deleteConversationApi(id: number): Promise<boolean> {
  * 流式聊天：返回事件异步迭代器
  * 后端协议：SSE，每行 `data: <JSON>\n`，结尾 `data: [DONE]\n\n`
  * 后端不在线时降级到 mockStreamChat 模拟 Agent 循环
+ *
+ * `conversationId` 给了就走**服务端权威路径**：后端自己从库里读历史、做裁剪并落库，
+ * 此时 `history` 会被忽略（仍然发过去，是为了兼容尚未升级的后端——它只认 history）。
  */
 export async function* streamChat(
   message: string,
-  history: HistoryMessage[]
+  history: HistoryMessage[],
+  conversationId?: number | null
 ): AsyncGenerator<ChatStreamEvent> {
   const online = await detectBackendStatus()
 
@@ -331,7 +335,11 @@ export async function* streamChat(
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({
+      message,
+      history,
+      ...(conversationId != null ? { conversation_id: conversationId } : {}),
+    }),
   })
   if (!res.ok || !res.body) throw new Error(`chat failed: ${res.status}`)
 
