@@ -1,5 +1,48 @@
+# ============================================================
+# Agent_study 统一依赖清单
+# ============================================================
+# 说明：backend/RAG_ 已不再是独立项目（其 pyproject.toml 已删除），
+# 依赖统一收敛到本文件。安装：
+#
+#     python -m pip install -r requirements.txt
+#
+# 若需要 GPU 版 PyTorch，请先单独安装（官方源，cu128 同时支持 RTX 40/50 系）：
+#     python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+# 默认从 PyPI 装到的是 CPU 版 torch，检索能跑但重排会慢 10 倍以上。
+# ============================================================
+
+# ---------- Agent 后端（backend/）----------
 openai
 python-dotenv
 fastapi
 uvicorn[standard]
 sqlalchemy
+
+# ---------- RAG 检索模块（backend/RAG_/）----------
+# 核心运行依赖：混合检索（稠密 + 稀疏）、重排、向量库、配置校验
+transformers>=4.51
+torch>=2.6
+qdrant-client>=1.12
+tiktoken>=0.7
+jieba>=0.42
+rank-bm25>=0.2.2
+numpy>=1.26
+pydantic>=2.6
+pyyaml>=6.0
+typer>=0.12
+rich>=13.0
+
+# ---------- RAG 文档摄入（仅摄入时需要，检索不需要）----------
+# 注意：docling 体积较大且会拉取版面模型；若知识库已摄入完成、
+# 只跑检索与评估，可以注释掉这一段以缩短环境搭建时间。
+docling>=2.0
+
+# ---------- 可选：PDF 快速通道 + Office 格式 ----------
+# pymupdf / pymupdf4llm：pdf_engine=auto 的 PyMuPDF 回退通道
+# python-docx / openpyxl：.docx / .xlsx 解析
+# modelscope：scripts/download_models.ps1 下载本地模型
+pymupdf>=1.24
+pymupdf4llm>=0.0.17
+python-docx>=1.1
+openpyxl>=3.1
+modelscope>=1.20

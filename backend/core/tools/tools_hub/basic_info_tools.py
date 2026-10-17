@@ -10,6 +10,9 @@ from core.services.assets import list_assets
 from core.services.debts import list_debts
 from core.services.goals import list_goals
 
+#: 显式声明对外工具（`tools_route` 的自动发现会以此为准）
+__all__ = ["get_financial_profile", "update_basic_info"]
+
 
 def get_financial_profile() -> dict:
     """获取当前用户财务画像：基本信息 + 资产 + 债务 + 目标聚合视图。

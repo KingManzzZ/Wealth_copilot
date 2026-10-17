@@ -15,6 +15,15 @@ from core.services.transactions import (
     delete_transaction,
 )
 
+#: 显式声明对外工具（`tools_route` 的自动发现会以此为准）
+__all__ = [
+    "record_income",
+    "record_expense",
+    "get_transactions",
+    "update_transaction_tool",
+    "delete_transaction_tool",
+]
+
 
 def record_income(
     amount: float,

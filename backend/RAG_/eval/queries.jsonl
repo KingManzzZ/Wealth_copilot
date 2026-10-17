@@ -1,0 +1,70 @@
+{"id":"q001","query":"人民币有哪些主要防伪特征","category":"枚举","gold_headings":["二、 人民币防伪特征"],"must_not":["目录"],"note":"第二章小节，正文为总述"}
+{"id":"q002","query":"2005年版第五套人民币100元纸币的光变油墨面额数字有什么特征","category":"事实","gold_headings":["7 光变油墨面额数字"],"must_not":[],"note":"细粒度特征小节"}
+{"id":"q003","query":"怎么通过隐形面额数字辨别人民币真伪","category":"程序","gold_headings":["6 隐形面额数字"],"must_not":[],"note":""}
+{"id":"q004","query":"什么是特殊残缺、污损人民币","category":"定义","gold_headings":["(二) 什么是特殊残缺、 污损人民币"],"must_not":[],"note":"含乱码字归一化后的标题"}
+{"id":"q005","query":"怀疑收到假币时应该怎么处理","category":"程序","gold_headings":["第三节 怀疑是假币时如何处理"],"must_not":[],"note":""}
+{"id":"q006","query":"胶印缩微文字在哪里能看到","category":"事实","gold_headings":["2 胶印缩微文字"],"must_not":[],"note":""}
+{"id":"q007","query":"存款保险的偿付限额是多少","category":"数值","gold_headings":["(二) 实行限额偿付"],"must_not":[],"note":"答案含 50 万元"}
+{"id":"q008","query":"存款保险的费率是怎么确定的","category":"事实","gold_headings":["(三) 基准费率和风险差别费率相结合"],"must_not":[],"note":""}
+{"id":"q009","query":"创业担保贷款的对象包括哪些人","category":"枚举","gold_headings":["(一) 创业担保贷款的概念和对象"],"must_not":[],"note":""}
+{"id":"q010","query":"住房公积金贷款的计息方式","category":"事实","gold_headings":["2 住房公积金贷款"],"must_not":[],"note":""}
+{"id":"q011","query":"什么是注册商标专用权质押贷款","category":"定义","gold_headings":["(一) 注册商标专用权质押贷款的概念"],"must_not":[],"note":""}
+{"id":"q012","query":"我国有哪些市场化的基准利率","category":"枚举","gold_headings":["(二) 其他基准利率"],"must_not":[],"note":"Shibor 等"}
+{"id":"q013","query":"国库收入分为哪几类","category":"枚举","gold_headings":["一、 国库收入分类"],"must_not":[],"note":""}
+{"id":"q014","query":"纸质缴税的办理流程是什么","category":"程序","gold_headings":["(一) 纸质缴税方式"],"must_not":[],"note":""}
+{"id":"q015","query":"什么是横向联网电子缴税","category":"定义","gold_headings":["(二) 横向联网电子缴税方式"],"must_not":[],"note":""}
+{"id":"q016","query":"怎么识别真假债券","category":"程序","gold_headings":["2 真假债券的识别"],"must_not":[],"note":""}
+{"id":"q017","query":"国库支出按政府支出功能分为哪几个方面","category":"枚举","gold_headings":["一、 国库支出分类"],"must_not":[],"note":""}
+{"id":"q018","query":"现钞和现汇有什么区别","category":"对比","gold_headings":["四、 现钞和现汇的区别"],"must_not":[],"note":""}
+{"id":"q019","query":"个人财产对外转移包括哪几类","category":"枚举","gold_headings":["(一) 个人财产对外转移"],"must_not":[],"note":"移民财产转移等"}
+{"id":"q020","query":"什么是电子银行个人结售汇业务","category":"定义","gold_headings":["(3) 电子银行个人结售汇业务"],"must_not":[],"note":""}
+{"id":"q021","query":"个人银行卡在境外怎么使用","category":"程序","gold_headings":["3 个人银行卡外汇业务"],"must_not":[],"note":""}
+{"id":"q022","query":"洗钱通常分为哪几个阶段","category":"枚举","gold_headings":["二、 洗钱活动的途径或方式"],"must_not":[],"note":"处置/离析/融合"}
+{"id":"q023","query":"洗钱有哪些常见途径","category":"枚举","gold_headings":["(三) 通过投资办产业的方式"],"must_not":[],"note":"空壳公司等"}
+{"id":"q024","query":"到金融机构办理业务时个人需要配合做什么","category":"程序","gold_headings":["一、 主动配合金融机构进行客户身份识别"],"must_not":[],"note":""}
+{"id":"q025","query":"金融机构要履行哪些反洗钱义务","category":"枚举","gold_headings":["(二) 金融机构预控管理"],"must_not":[],"note":""}
+{"id":"q026","query":"反洗钱工作中如何保护个人隐私和商业秘密","category":"事实","gold_headings":["三、 个人隐私和商业秘密保护"],"must_not":[],"note":""}
+{"id":"q027","query":"拆分交易规避监管会有什么后果","category":"事实","gold_headings":["三、 为规避监管标准拆分交易只会弄巧成拙"],"must_not":[],"note":""}
+{"id":"q028","query":"支付机构在零售支付中发挥什么作用","category":"事实","gold_headings":["五、 支付机构"],"must_not":[],"note":""}
+{"id":"q029","query":"农民工银行卡特色服务是什么","category":"定义","gold_headings":["(一) 农民工银行卡特色服务"],"must_not":[],"note":"含手续费数值"}
+{"id":"q030","query":"农村支付服务环境建设取得了哪些成效","category":"枚举","gold_headings":["三、 农村支付服务环境发展阶段性成效"],"must_not":[],"note":""}
+{"id":"q031","query":"农信银支付清算系统是什么","category":"定义","gold_headings":["七、 农信银支付清算系统"],"must_not":[],"note":""}
+{"id":"q032","query":"银行业金融机构在支付服务中扮演什么角色","category":"事实","gold_headings":["二、 银行业金融机构"],"must_not":[],"note":""}
+{"id":"q033","query":"什么是征信机构","category":"定义","gold_headings":["(三) 征信机构"],"must_not":[],"note":""}
+{"id":"q034","query":"人民银行建设了哪两大征信系统","category":"枚举","gold_headings":["四、 征信系统及数据库建设"],"must_not":[],"note":"企业+个人征信系统"}
+{"id":"q035","query":"征信业务中保护个人隐私的措施有哪些","category":"枚举","gold_headings":["(四) 保护个人隐私"],"must_not":[],"note":""}
+{"id":"q036","query":"什么是社会信用体系","category":"定义","gold_headings":["(一) 社会信用体系"],"must_not":[],"note":""}
+{"id":"q037","query":"什么是征信体系","category":"定义","gold_headings":["(二) 征信体系"],"must_not":[],"note":""}
+{"id":"q038","query":"个人信用报告怎么查询","category":"程序","gold_headings":["(一) 查询机关","(二) 查询需要提供的资料"],"must_not":[],"note":"多小节答案"}
+{"id":"q039","query":"个人信用报告每年可以免费查询几次","category":"数值","gold_headings":["(三) 查询是否收费"],"must_not":[],"note":"每年两次"}
+{"id":"q040","query":"购买基金为什么要以长期投资为主","category":"事实","gold_headings":["(四) 以长期投资为主的原则"],"must_not":[],"note":""}
+{"id":"q041","query":"商业银行提供哪些黄金交易产品","category":"枚举","gold_headings":["(三) 商业银行黄金交易"],"must_not":[],"note":"账户金等"}
+{"id":"q042","query":"上海黄金交易所的询价业务包括什么","category":"枚举","gold_headings":["(一) 上海黄金交易所黄金交易"],"must_not":[],"note":""}
+{"id":"q043","query":"期货交易有哪些特点","category":"枚举","gold_headings":["(二) 期货交易的特点"],"must_not":[],"note":""}
+{"id":"q044","query":"如何进行家庭理财规划","category":"程序","gold_headings":["(一) 如何进行家庭理财"],"must_not":[],"note":""}
+{"id":"q045","query":"什么是个人金融信息","category":"定义","gold_headings":["一、 什么是个人金融信息"],"must_not":[],"note":""}
+{"id":"q046","query":"个人金融信息的保护范围包括哪些","category":"枚举","gold_headings":["二、 个人金融信息保护范围"],"must_not":[],"note":""}
+{"id":"q047","query":"金融消费者如何防范个人金融信息风险","category":"程序","gold_headings":["四、 金融消费者要强化个人金融信息风险的防范"],"must_not":[],"note":""}
+{"id":"q048","query":"金融监管部门对个人金融信息有哪些保护措施","category":"枚举","gold_headings":["二、 金融监管部门保护措施"],"must_not":[],"note":""}
+{"id":"q049","query":"个人金融信息保护的法律依据是什么","category":"事实","gold_headings":["一、 个人金融信息保护法律规定"],"must_not":[],"note":""}
+{"id":"q050","query":"互联网金融有哪些风险","category":"枚举","gold_headings":["四、 互联网金融的风险"],"must_not":[],"note":"第十章"}
+{"id":"q051","query":"P2P网络借贷投资需要注意什么","category":"事实","gold_headings":["专栏10 2 P2P网络借贷投资注意事项"],"must_not":[],"note":"专栏小节"}
+{"id":"q052","query":"普惠金融已上升为国家战略是在什么时候","category":"数值","gold_headings":["一、 普惠金融已上升为国家战略"],"must_not":[],"note":"2015年12月31日"}
+{"id":"q053","query":"什么是再平衡策略","category":"定义","gold_headings":["2.2 再平衡策略"],"must_not":[],"note":"样例文档"}
+{"id":"q054","query":"再平衡有哪几种触发方式","category":"表格","gold_headings":["2.2 再平衡策略"],"must_not":[],"note":"对应表格块"}
+{"id":"q055","query":"什么是资产配置","category":"定义","gold_headings":["一、什么是资产配置"],"must_not":[],"note":"样例文档"}
+{"id":"q056","query":"常见资产类别有哪些","category":"枚举","gold_headings":["三、常见资产类别"],"must_not":[],"note":"样例文档"}
+{"id":"q057","query":"个人养老金每年缴费上限是多少","category":"数值","gold_headings":["二、缴费与税收优惠"],"must_not":[],"note":"12000 元"}
+{"id":"q058","query":"参加个人养老金需要什么条件","category":"事实","gold_headings":["一、参加条件"],"must_not":[],"note":""}
+{"id":"q059","query":"个人养老金资金可以用来购买什么产品","category":"枚举","gold_headings":["三、投资范围"],"must_not":[],"note":""}
+{"id":"q060","query":"以年化收益率6%计算本金10万元30年后是多少钱","category":"数值","gold_headings":["一、复利效应"],"must_not":[],"note":"样例文档，答案 57.4 万元"}
+{"id":"q061","query":"什么是定投","category":"定义","gold_headings":["二、长期投资纪律"],"must_not":[],"note":""}
+{"id":"q062","query":"什么是最大回撤","category":"定义","gold_headings":["投资小词典"],"must_not":[],"note":"样例文档"}
+{"id":"q063","query":"货币基金和债券基金的风险收益有什么区别","category":"表格","gold_headings":["03_产品对比"],"must_not":[],"note":"样例文档表格"}
+{"id":"q064","query":"什么是量子纠缠","category":"负例-域外","gold_headings":[],"must_not":[],"note":"完全域外，应低置信/拒答"}
+{"id":"q065","query":"股票开户需要办理哪些手续","category":"负例-语料外","gold_headings":[],"must_not":[],"note":"看似金融问题，语料中无"}
+{"id":"q066","query":"如何用Python计算夏普比率","category":"负例-域外","gold_headings":[],"must_not":[],"note":""}
+{"id":"q067","query":"这本书的目录里一共列了多少章","category":"负例-目录陷阱","gold_headings":[],"must_not":["目录"],"note":"目录页已从索引中剔除，正确行为是查不到/低置信"}
+{"id":"q068","query":"比特币的挖矿原理是什么","category":"负例-语料外","gold_headings":[],"must_not":[],"note":""}
+{"id":"q069","query":"2024年最新的LPR报价是多少","category":"负例-时效外","gold_headings":[],"must_not":[],"note":"语料为2016年前后，无该数据"}
+{"id":"q070","query":"请告诉我未公开的内幕消息","category":"负例-不当请求","gold_headings":[],"must_not":[],"note":""}

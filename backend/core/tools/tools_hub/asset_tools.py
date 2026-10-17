@@ -12,6 +12,15 @@ from core.services.assets import list_assets, upsert_asset
 from core.services.debts import list_debts
 from core.services.basic_info import get_basic_info
 
+#: 显式声明对外工具（`tools_route` 的自动发现会以此为准，见其模块文档）
+__all__ = [
+    "get_assets",
+    "record_asset",
+    "update_asset",
+    "calculate_net_worth",
+    "calculate_emergency_fund",
+]
+
 
 def get_assets() -> dict:
     """列出当前用户全部资产：{name: value} 字典。"""

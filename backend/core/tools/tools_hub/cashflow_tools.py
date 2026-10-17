@@ -7,6 +7,9 @@
 
 from core.services.cashflow import list_cashflow, get_latest_month, upsert_cashflow
 
+#: 显式声明对外工具（`tools_route` 的自动发现会以此为准）
+__all__ = ["get_monthly_cashflow", "calculate_savings_rate", "set_monthly_cashflow"]
+
 
 def get_monthly_cashflow(months: int = 1) -> dict | list:
     """获取月度现金流汇总。

@@ -109,6 +109,10 @@ def chat_stream(message, history=None):
                 arguments = {}
             yield {"type": "tool_call", "id": tool["id"], "name": tool["name"], "arguments": arguments}
 
+            #【进度事件】工具执行期间先通知前端，避免知识库检索（1~3s）表现为静默卡死。
+            # 前端可据此显示"正在检索知识库…"，并在收到 tool_result 时收起。
+            yield {"type": "tool_start", "id": tool["id"], "name": tool["name"]}
+
             origin_result=tools_route.route(tool["name"], tool["arguments"])
             result = json.loads(origin_result)
             status="error" if isinstance(result,dict) and "error" in result else "success"

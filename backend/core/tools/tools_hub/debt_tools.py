@@ -8,6 +8,9 @@
 
 from core.services.debts import list_debts, upsert_debt
 
+#: 显式声明对外工具（`tools_route` 的自动发现会以此为准）
+__all__ = ["get_debts", "record_debt", "update_debt"]
+
 
 def get_debts() -> dict:
     """列出当前用户全部负债：{name: {remaining, monthly_payment}} 字典。"""

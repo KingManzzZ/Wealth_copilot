@@ -15,6 +15,15 @@ from core.services.goals import (
     complete_goal,
 )
 
+#: 显式声明对外工具（`tools_route` 的自动发现会以此为准）
+__all__ = [
+    "create_goal",
+    "get_goals",
+    "update_goal",
+    "complete_goal_tool",
+    "calculate_goal_contribution",
+]
+
 
 def create_goal(
     id: str,

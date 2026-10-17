@@ -19,6 +19,21 @@ from core.database import init_db
 async def lifespan(app: FastAPI):
     # 启动时显式建表（幂等）；get_connection 首次连接另有懒加载兜底
     init_db()
+
+    # RAG 预热：把模型冷启动（编码器 + 重排器各 1.15GB，约 15s）从"用户第一次提问"
+    # 挪到服务启动阶段。prewarm() 内部吞异常——知识库检索是可选能力，
+    # 其依赖缺失不应导致整个 Agent 服务起不来。
+    try:
+        from core.tools.tools_hub.rag_tools import impl as _rag_impl
+
+        info = _rag_impl.prewarm()
+        if info.get("ok"):
+            print(f"[rag] 预热完成，耗时 {info.get('cold_start_ms')} ms")
+        else:
+            print(f"[rag] 预热跳过（检索工具不可用）：{info.get('error')}")
+    except Exception as exc:  # noqa: BLE001 —— 兜底：连 import 失败也不能影响启动
+        print(f"[rag] 预热异常（已忽略，服务继续启动）：{type(exc).__name__}: {exc}")
+
     yield
 
 

@@ -1,0 +1,47 @@
+// RAG 阈值校准评估集（补充负例 + 用法说明）
+//
+// ## 先读这段：本项目已有一份可复用的评估集
+//
+// `eval/queries.jsonl` 已经包含 **70 条 chunk 级查询**（63 条可答 + 7 条「负例-*」），
+// 且每条都带 `gold_headings`（锚定标题路径）。这意味着你**不需要从零标注**：
+//
+//   python eval/build_eval_pool.py --queries eval/queries.jsonl --out eval/pool --pool-depth 10
+//   python eval/apply_grades.py --pool eval/pool --labels eval/pool/labels.template.json \
+//       --out eval/queries.graded.jsonl --seed-from-gold
+//   python eval/tune_rerank_threshold.py --queries eval/queries.graded.jsonl --ab
+//
+// `--seed-from-gold` 会把 `gold_headings` 命中的候选自动记为 grade=2、其余记为 0，
+// 于是立刻得到可用的 **positive / negative 划分**，足够校准 `no_answer_threshold`。
+//
+// ⚠️ 但它**区分不出 grade=1（相关但不完整）**，所以 `rerank_floor` 仍需要人工把
+//    「相关但单独不能回答问题」的候选改成 1。那一步无法自动派生。
+//
+// ## 本文件的用途
+//
+// 现有集合只有 7 条负例，`tune_rerank_threshold.py` 在 negative < 8 时会告警——
+// 拒答阈值的估计对负例数量很敏感。本文件补充 8 条负例，把它凑到 15 条，
+// 让「库里没答案时能不能正确拒答」这个判断有统计基础。
+//
+// 合并方式（把两个文件的查询拼在一起即可，id 不重复）：
+//   Get-Content eval/queries.jsonl, eval/queries.calibration.jsonl |
+//     Where-Object { $_ -notmatch '^\s*//' -and $_.Trim() } |
+//     Set-Content eval/queries.big.jsonl
+//   然后对 eval/queries.big.jsonl 重跑上面的三步。
+//
+// ## 字段说明
+//
+// `category` 以「负例」开头 → 该查询被判为不可答（`UNANSWERABLE_PREFIX`），
+// 阈值校准会把它归入 negative 类。新增负例请沿用这个前缀。
+//
+// ⚠️ 负例应当是**真实用户会问、但知识库确实没有答案**的问题。
+//    不要用「随便编一句无意义的话」当负例——那样的查询 rerank 分本来就低，
+//    会把拒答能力高估。
+
+{"id":"neg008","query":"贵州茅台今天的股价是多少？","category":"负例-实时数据","note":"知识库为静态政策读本，无实时行情","expected":"negative"}
+{"id":"neg009","query":"能不能推荐一只适合我现在买入的指数基金？","category":"负例-荐股","note":"不应推荐具体产品（合规红线），且库内无产品评级","expected":"negative"}
+{"id":"neg010","query":"2025年首套房贷利率下限是多少？","category":"负例-时效外","note":"语料为 2016 年前后的普及读本，无近年利率政策","expected":"negative"}
+{"id":"neg011","query":"公募 REITs 的认购门槛和上市首日涨跌幅限制是多少？","category":"负例-语料外","note":"读本未覆盖 REITs","expected":"negative"}
+{"id":"neg012","query":"个人养老金账户在哪家银行开户收益最高？","category":"负例-语料外","note":"需要机构对比数据，库内无","expected":"negative"}
+{"id":"neg013","query":"我所在城市公积金贷款最高能贷多少钱？","category":"负例-用户私域","note":"属地政策 + 个人信息，均不在库内；应走数据工具或询问用户","expected":"negative"}
+{"id":"neg014","query":"用 Python 帮我写一个爬取基金净值的脚本。","category":"负例-超纲","note":"与金融知识库主题无关","expected":"negative"}
+{"id":"neg015","query":"请把这段话翻译成英文：财富规划的核心是现金流管理。","category":"负例-超纲","note":"纯语言任务，不需要检索","expected":"negative"}
