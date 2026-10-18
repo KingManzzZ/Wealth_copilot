@@ -216,9 +216,11 @@ GPT 式多会话：会话行**惰性创建**（发出首条消息时才建，空
 | `role` | enum | 仅 `user` / `assistant`（tool 中间态内嵌在 assistant.tool_calls） |
 | `content` | string | 消息文本 |
 | `tool_calls` | JSON \| null | 仅 assistant：`[{id, name, arguments, result?, status}]` |
+| `interrupted` | boolean | 该轮被用户中止/断连。**UI 展示，但不进模型上下文**（回放跳过） |
+| `stop_reason` | string \| null | `client`（点了停止）/ `disconnect`（掉线） |
 
-- GET `/api/conversations/{id}/messages` → `[{id, role, content, tool_calls?}, ...]`；会话不存在 404
-- POST `/api/conversations/{id}/messages` body `{messages: [{role, content, tool_calls?}]}` → `{conversation_id, title, saved}`；每轮对话一次批量写入
+- GET `/api/conversations/{id}/messages` → `[{id, role, content, tool_calls?, interrupted, stop_reason?}, ...]`；会话不存在 404
+- POST `/api/conversations/{id}/messages` body `{messages: [{role, content, tool_calls?, interrupted?, stop_reason?}]}` → `{conversation_id, title, saved}`；每轮对话一次批量写入
 - DELETE `/api/conversations/{id}` → 硬删，messages 由 `ON DELETE CASCADE` 级联清除
 
 ## 3. 其他接口
@@ -226,7 +228,8 @@ GPT 式多会话：会话行**惰性创建**（发出首条消息时才建，空
 | 方法 | 路径 | 说明 | 状态 |
 |---|---|---|---|
 | GET | `/api/health` | 健康检查，前端据此判断是否降级 mock | 已实现 |
-| POST | `/api/chat` | Agent SSE 流式对话 | 已实现，事件协议见 `frontend/API_CONTRACT.md` 第 4 节 |
+| POST | `/api/chat` | Agent SSE 流式对话（body 可带 `conversation_id` / `turn_id`） | 已实现，事件协议见 `frontend/API_CONTRACT.md` 第 4 节 |
+| POST | `/api/chat/cancel` | 取消一轮生成 body `{turn_id}`；返回 `{cancelled, done, reason}`，幂等 | 已实现 |
 
 ## 4. 数据存储约定（后端内部）
 
@@ -240,7 +243,7 @@ v0.4 起按关系建模拆分，每张表都带 `user_id` 列（INTEGER NOT NULL
 | `goals` | 财富目标，多行 | id, user_id, goal_id, name, target, current, deadline, priority |
 | `transactions` | 交易流水明细（**收支唯一数据源**） | id, user_id, transaction_type, amount, category, source, occurred_at, note |
 | `conversations` | 对话会话（v0.6 启用） | id, user_id, title, summary, status, created_at, updated_at |
-| `messages` | 会话消息（v0.6 启用） | id, conversation_id (CASCADE), role, content, tool_calls, tool_name, created_at |
+| `messages` | 会话消息（v0.6 启用） | id, conversation_id (CASCADE), role, content, tool_calls, tool_name, interrupted, stop_reason, created_at |
 
 UNIQUE 约束：
 - `basic_info`：`id`（单行模式固定为 OWNER_ID）

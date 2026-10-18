@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import type { KeyboardEvent, RefObject } from "react"
-import { Send, Square } from "lucide-react"
+import { Send, Square, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface ChatInputProps {
@@ -11,7 +11,9 @@ interface ChatInputProps {
   onStop: () => void
   /** 是否正在流式生成 —— 决定右下角是「发送」还是「停止」 */
   streaming: boolean
-  /** 不能发送（正在生成 / 空输入） */
+  /** 已请求取消、正在等服务端收尾 —— 此时发不出去，也不该显示停止 */
+  stopping: boolean
+  /** 不能发送（正在生成 / 正在停止 / 空输入） */
   disabled: boolean
   /** 外部传入的 textarea ref，供父组件聚焦/操作光标 */
   textareaRef: RefObject<HTMLTextAreaElement | null>
@@ -23,6 +25,7 @@ export function ChatInput({
   onSend,
   onStop,
   streaming,
+  stopping,
   disabled,
   textareaRef,
 }: ChatInputProps) {
@@ -69,6 +72,17 @@ export function ChatInput({
           className="shrink-0"
         >
           <Square className="h-3.5 w-3.5 fill-current" />
+        </Button>
+      ) : stopping ? (
+        // 本地流已断，服务端还在收尾（落库 + 释放会话锁）。此时发新消息会撞 409
+        <Button
+          size="icon"
+          disabled
+          title="正在停止上一轮…"
+          aria-label="正在停止"
+          className="shrink-0"
+        >
+          <Loader2 className="h-4 w-4 animate-spin" />
         </Button>
       ) : (
         <Button

@@ -145,6 +145,11 @@ SCHEMA_SQL: str = """
         -- 7. messages：消息表
         -- 保存用户、Agent 和工具之间的消息。
         -- 删除对话时级联删除关联消息。
+        --
+        -- interrupted / stop_reason：本轮生成被用户中止或连接断开时置位。
+        -- 这类轮次**不进模型上下文**（见 services/replay.py）——半截回答会让模型
+        -- 以为"我已经说完了"，而工具也可能只执行了一部分；但 UI 仍要能显示它，
+        -- 所以落库而不是丢弃。
         -- ===================================================================
         CREATE TABLE IF NOT EXISTS messages (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,6 +159,8 @@ SCHEMA_SQL: str = """
             content           TEXT    NOT NULL,
             tool_calls        TEXT,
             tool_name         TEXT,
+            interrupted       INTEGER NOT NULL DEFAULT 0,
+            stop_reason       TEXT,
             created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -163,10 +170,35 @@ SCHEMA_SQL: str = """
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """在给定连接上执行建表脚本（幂等；失败异常向上抛出），并清理遗留表。"""
+    """在给定连接上执行建表脚本（幂等；失败异常向上抛出），并做轻量迁移。"""
     conn.executescript(SCHEMA_SQL)
+    _ensure_message_columns(conn)
     _drop_legacy_cashflow(conn)
     conn.commit()
+
+
+def _ensure_message_columns(conn: sqlite3.Connection) -> None:
+    """给旧库补上 ``messages.interrupted`` / ``stop_reason`` 两列。
+
+    用 ``ALTER TABLE ADD COLUMN`` 而不是重建表：SQLite 的 ADD COLUMN 只改元数据、
+    不重写行；旧行默认 0/NULL，语义正好是"历史上没有被打断的轮次"。
+
+    为什么不靠建表脚本：``CREATE TABLE IF NOT EXISTS`` 对已存在的表是空操作，
+    **不会补列**（SQLite 的既定行为），所以必须有这一步。
+    """
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(messages)")}
+    except sqlite3.OperationalError:
+        return  # 连 messages 表都还没有，交给建表脚本
+
+    if "interrupted" not in existing:
+        conn.execute(
+            "ALTER TABLE messages ADD COLUMN interrupted INTEGER NOT NULL DEFAULT 0"
+        )
+        print("[schema] messages 表已补列：interrupted")
+    if "stop_reason" not in existing:
+        conn.execute("ALTER TABLE messages ADD COLUMN stop_reason TEXT")
+        print("[schema] messages 表已补列：stop_reason")
 
 
 def _drop_legacy_cashflow(conn: sqlite3.Connection) -> None:

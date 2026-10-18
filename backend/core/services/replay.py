@@ -34,6 +34,12 @@ I4 缺失必补      没有 ``result`` 时**合成**一条"未完成"提示，�
 **I4 是把致命错误降级为可恢复提示的关键**：省略 → 缺应答 → 该会话永久无法续聊；
 合成 → 模型看到"这个调用没拿到结果，可以重试" → 会话活着。
 
+## 被中止的轮次（interrupted）
+
+用户点"停止"或连接断开时，那一轮 assistant 消息会带 ``interrupted=1`` 落库。
+回放时**整轮跳过**（见 ``expand_to_model_messages``）：半截回答会让模型以为自己说完了，
+工具也可能只执行了一部分。它仍留在库里供 UI 展示，只是不进入模型上下文。
+
 > 与 ``agent.py`` 里"重复调用跳过时仍要回填 tool 消息"是同一条协议规则的另一次体现
 > （见 ``问题文档/Agent-工具调用可靠性.md`` 的 T2-1）。
 """
@@ -74,6 +80,15 @@ def expand_to_model_messages(rows) -> list:
 
     for row in rows:
         role = row.get("role")
+
+        if role == "assistant" and row.get("interrupted"):
+            # 被中止的轮次**整轮不进模型上下文**（产品决策）：半截回答会让模型
+            # 以为自己已经说完了，而工具也可能只执行了一部分。它仍留在库里给 UI 展示，
+            # 只是不参与回放。
+            #
+            # **用户消息保留**：否则模型会以为用户那句话没说过，下一轮容易重复追问。
+            # 协议上"连续两条 user"是合法的，不需要额外处理。
+            continue
 
         if role != "assistant":
             out.append({"role": role, "content": row.get("content") or ""})

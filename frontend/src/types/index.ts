@@ -53,6 +53,10 @@ export type ChatStreamEvent =
   | { type: "tool_result"; id: string; result: unknown; status: "success" | "error" }
   | { type: "answer"; content: string }
   | { type: "round"; round: number }
+  /** 流的第一帧：本轮 id（取消接口按它定位） */
+  | { type: "turn"; turn_id: string }
+  /** 服务端确认中止（可能早于客户端 abort 到达，也可能被 abort 吞掉） */
+  | { type: "cancelled"; turn_id: string; reason: string }
   | { type: "done" }
   | { type: "error"; message: string }
 
@@ -78,6 +82,8 @@ export interface StoredMessage {
   role: "user" | "assistant"
   content: string
   tool_calls?: ToolCall[]
+  /** 该轮被用户中止/断连：UI 显示"已停止生成"，但不参与模型上下文 */
+  interrupted?: boolean
 }
 
 // ===== 用户画像（按拆表后结构） =====

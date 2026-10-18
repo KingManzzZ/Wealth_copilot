@@ -25,6 +25,7 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
   const {
     messages,
     isStreaming,
+    isStopping,
     sendMessage,
     stopStreaming,
     conversations,
@@ -145,7 +146,8 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
           onSend={handleSend}
           onStop={stopStreaming}
           streaming={isStreaming}
-          disabled={isStreaming}
+          stopping={isStopping}
+          disabled={isStreaming || isStopping}
           textareaRef={inputRef}
         />
       </div>

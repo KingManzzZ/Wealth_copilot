@@ -345,12 +345,16 @@ export async function deleteConversationApi(id: number): Promise<boolean> {
  *
  * `signal` 用于「停止生成」：中止后 fetch 的响应体会 reject，
  * 调用方（useChat）据此把消息标记为已截断，而不是当作错误。
+ *
+ * `turnId` 由前端生成本轮 id：停止按钮要拿它去 `POST /api/chat/cancel`。
+ * 由前端生成而不是等服务端下发，是为了让"刚发出去就点停止"这个窗口里也有 id 可用。
  */
 export async function* streamChat(
   message: string,
   history: HistoryMessage[],
   conversationId?: number | null,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  turnId?: string
 ): AsyncGenerator<ChatStreamEvent> {
   const online = await detectBackendStatus()
 
@@ -370,6 +374,7 @@ export async function* streamChat(
       message,
       history,
       ...(conversationId != null ? { conversation_id: conversationId } : {}),
+      ...(turnId ? { turn_id: turnId } : {}),
     }),
     signal,
   })
@@ -408,4 +413,28 @@ export async function* streamChat(
 /** 与浏览器 fetch 中止时同名的错误，便于上层用 name === "AbortError" 统一判断 */
 function abortStream(): DOMException {
   return new DOMException("已停止生成", "AbortError")
+}
+
+/**
+ * 取消一轮生成（幂等）。
+ *
+ * 刻意**不做** `detectBackendStatus()` 前置探测：停止是用户显式动作，
+ * 应该在同一个 tick 里把请求发出去，抢在本地 `abort()` 之前到达服务端，
+ * 这样服务端记录的 `stop_reason` 才是 `client` 而不是 `disconnect`。
+ *
+ * `keepalive` 让请求在页面卸载（关标签页）时也能发完。
+ */
+export async function cancelChatTurn(turnId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/chat/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ turn_id: turnId }),
+      keepalive: true,
+    })
+    return res.ok
+  } catch {
+    // 离线 / 请求失败都只是"没取消成"：本地 abort 已经把 UI 停了
+    return false
+  }
 }

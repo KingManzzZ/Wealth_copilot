@@ -75,7 +75,7 @@ def get_conversation_messages(conversation_id: int) -> list | None:
             return None
         rows = conn.execute(
             """
-            SELECT id, role, content, tool_calls
+            SELECT id, role, content, tool_calls, interrupted, stop_reason
             FROM messages
             WHERE conversation_id = ?
             ORDER BY id
@@ -88,12 +88,19 @@ def get_conversation_messages(conversation_id: int) -> list | None:
 
 
 def _row_to_message(row) -> dict:
-    """将 messages 表行转为契约 dict；tool_calls JSON 解析失败时降级为空数组。"""
+    """将 messages 表行转为契约 dict；tool_calls JSON 解析失败时降级为空数组。
+
+    ``interrupted`` 一并返回：前端要靠它把历史里被中止的轮次也标成"已停止生成"，
+    否则刷新后同一个回答看起来像正常说完的。
+    """
     message = {
         "id": row["id"],
         "role": row["role"],
         "content": row["content"],
+        "interrupted": bool(row["interrupted"]),
     }
+    if row["stop_reason"]:
+        message["stop_reason"] = row["stop_reason"]
     if row["tool_calls"]:
         try:
             message["tool_calls"] = json.loads(row["tool_calls"])
@@ -105,15 +112,23 @@ def _row_to_message(row) -> dict:
 def append_messages(conversation_id: int, items: list) -> dict | None:
     """单事务批量追加消息；会话不存在返回 None。
 
-    items 元素（路由层已用 Pydantic 校验）：{role, content, tool_calls?}
-    仅接受 user / assistant 两种角色——tool 中间态已内嵌在 assistant.tool_calls。
+    items 元素（路由层已用 Pydantic 校验）：``{role, content, tool_calls?,
+    interrupted?, stop_reason?}``。仅接受 user / assistant 两种角色——
+    tool 中间态已内嵌在 assistant.tool_calls。
+
+    ``interrupted`` 只对 assistant 有意义：标记"这一轮是被中止的"，
+    回放时据此把整轮排除出模型上下文（UI 仍然展示）。
     顺带：刷新会话 updated_at；title 为空且含 user 消息时截前 20 字补标题。
     """
     cleaned = []
     for item in items:
         entry = {"role": item["role"], "content": item["content"]}
-        if item["role"] == "assistant" and item.get("tool_calls"):
-            entry["tool_calls"] = item["tool_calls"]
+        if item["role"] == "assistant":
+            if item.get("tool_calls"):
+                entry["tool_calls"] = item["tool_calls"]
+            if item.get("interrupted"):
+                entry["interrupted"] = True
+                entry["stop_reason"] = item.get("stop_reason") or "client"
         cleaned.append(entry)
 
     now = _now()
@@ -130,8 +145,10 @@ def append_messages(conversation_id: int, items: list) -> dict | None:
             for entry in cleaned:
                 conn.execute(
                     """
-                    INSERT INTO messages (conversation_id, role, content, tool_calls)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO messages
+                        (conversation_id, role, content, tool_calls,
+                         interrupted, stop_reason)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
                         conversation_id,
@@ -140,6 +157,8 @@ def append_messages(conversation_id: int, items: list) -> dict | None:
                         json.dumps(entry["tool_calls"], ensure_ascii=False)
                         if "tool_calls" in entry
                         else None,
+                        1 if entry.get("interrupted") else 0,
+                        entry.get("stop_reason"),
                     ),
                 )
 

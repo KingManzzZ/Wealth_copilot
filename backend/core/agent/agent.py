@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 
 from ..tools import tools_route, tools_schema
+from .cancel import TurnCancel, TurnCancelled
 from .prompt import SYSTEM_PROMPT
 
 from dotenv import load_dotenv
@@ -44,7 +45,23 @@ def _system_content() -> str:
 
 
 
-def chat_stream(message, history=None):
+def _check(cancel: TurnCancel | None) -> None:
+    """取消检查点：已取消就抛 ``TurnCancelled``（控制流，不是错误）。
+
+    四个位置必须检查，各有各的理由：
+
+    1. **每轮开头**——省掉最贵的一次 LLM 请求；
+    2. **每个流式 chunk**——命中后立刻跳出 ``for``，由 ``finally: stream.close()``
+       关掉上游连接（否则供应商那边会继续生成、继续计费）；
+    3. **每个工具执行前**——不再启动新的 1~3s GPU 检索；
+    4. 工具执行完**不**检查——已产生的副作用必须连同结果一起回填/落库，
+       否则历史里会出现"工具调了但没有结果"，与事实不符。
+    """
+    if cancel is not None:
+        cancel.check()
+
+
+def chat_stream(message, history=None, cancel: TurnCancel | None = None):
 
     #messages为需要维护的总体消息列表
     messages:list[ChatCompletionMessageParam]=[
@@ -63,6 +80,7 @@ def chat_stream(message, history=None):
     last_error = ""
 
     for round_num in range(1,MAX_ROUNDS+1):
+        _check(cancel)
         #向前端传递当前轮次情况
         yield {"type": "round", "round": round_num}
 
@@ -82,6 +100,7 @@ def chat_stream(message, history=None):
         #流式响应反馈处理
         try:
             for chunk in stream:
+                _check(cancel)
                 if not chunk.choices:
                     continue
                 delta=chunk.choices[0].delta
@@ -136,6 +155,7 @@ def chat_stream(message, history=None):
 
         #工具调用
         for tool in tool_calls.values():
+            _check(cancel)
             signature = (tool["name"], tool["arguments"] or "")
             if signature in seen_calls:
                 #【时机幻觉】完全相同的调用重复出现，不再执行。

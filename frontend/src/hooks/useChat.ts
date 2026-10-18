@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
+  cancelChatTurn,
   createConversation,
   deleteConversationApi,
   fetchConversationMessages,
@@ -76,8 +77,19 @@ function toChatMessage(m: StoredMessage): ChatMessage {
     role: m.role,
     content: m.content,
     toolCalls: m.tool_calls ?? [],
+    // 历史里的中断轮次也要显示"已停止生成"，否则刷新后看起来像正常说完的
+    stopped: m.interrupted === true,
     createdAt: Date.now(),
   }
+}
+
+/** 本轮 id：优先 crypto.randomUUID（localhost/https 可用），否则退化为时间戳随机串 */
+function newTurnId(): string {
+  const webCrypto = globalThis.crypto
+  if (webCrypto && typeof webCrypto.randomUUID === "function") {
+    return webCrypto.randomUUID()
+  }
+  return `t-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 /**
@@ -89,6 +101,8 @@ function toChatMessage(m: StoredMessage): ChatMessage {
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
+  /** 已请求取消、正在等服务端收尾（落库 + 释放会话锁）。此间禁止再发 */
+  const [isStopping, setIsStopping] = useState(false)
   const [conversations, setConversations] = useState<ConversationMeta[]>([])
   const [conversationId, setConversationId] = useState<number | null>(null)
   const assistantIdRef = useRef<string | null>(null)
@@ -96,6 +110,8 @@ export function useChat() {
   const messagesRef = useRef<ChatMessage[]>([])
   /** 当前流的取消句柄；null 表示没有正在进行的生成 */
   const abortRef = useRef<AbortController | null>(null)
+  /** 当前轮 id（取消接口按它定位）；null 表示没有进行中的轮次 */
+  const turnIdRef = useRef<string | null>(null)
 
   // 用 ref 同步最新 messages，避免闭包捕获旧值
   const syncRef = (next: ChatMessage[]) => {
@@ -155,7 +171,7 @@ export function useChat() {
   const sendMessage = useCallback(
     async (text: string) => {
       const trimmed = text.trim()
-      if (!trimmed || isStreaming) return
+      if (!trimmed || isStreaming || isStopping) return
 
       // 首条消息发出时才真正创建会话；后端不可用（mock 模式）则 convId 保持 null，本轮不落库
       let convId = conversationIdRef.current
@@ -192,12 +208,17 @@ export function useChat() {
       const controller = new AbortController()
       abortRef.current = controller
 
+      // 本轮 id 由前端生成：这样"刚发出就点停止"也有 id 可用，不必等服务端首帧
+      const turnId = newTurnId()
+      turnIdRef.current = turnId
+
       try {
         for await (const evt of streamChat(
           trimmed,
           history,
           convId,
-          controller.signal
+          controller.signal,
+          turnId
         )) {
           const current = messagesRef.current
           syncRef(
@@ -226,6 +247,7 @@ export function useChat() {
         )
       } finally {
         if (abortRef.current === controller) abortRef.current = null
+        if (turnIdRef.current === turnId) turnIdRef.current = null
         // 若流在产出任何事件前就失败，assistant 消息既无内容也无工具调用，
         // 只可能残留一个空壳（错误已在 catch 追加到 content）。
         // 如果连错误都没留下（极端情况），移除这条空消息避免 typing 指示器常驻。
@@ -258,17 +280,36 @@ export function useChat() {
         })
       }
     },
-    [adoptConversation, isStreaming, refreshConversations]
+    [adoptConversation, isStreaming, isStopping, refreshConversations]
   )
 
-  /** 停止当前生成：只中断流，不删除已收到的内容 */
-  const stopStreaming = useCallback(() => {
+  /**
+   * 停止当前生成（本地立即停 + 通知服务端取消）。
+   *
+   * 顺序很重要：
+   * 1. **先**把取消请求发出去（同一个 tick，不做状态探测），
+   * 2. **再** abort 本地流。反过来会让服务端先看到断连，
+   *    落库的 `stop_reason` 变成 `disconnect`，事后分不清"用户停的"还是"掉线"。
+   * 3. 等服务端收尾（落库 + 释放会话锁）再放开输入，
+   *    否则立刻重发会撞上 409（上一轮仍在生成中）。
+   */
+  const stopStreaming = useCallback(async () => {
+    const turnId = turnIdRef.current
+    const pending = turnId ? cancelChatTurn(turnId) : null
     abortRef.current?.abort()
+    if (!pending) return
+    setIsStopping(true)
+    try {
+      await pending
+    } finally {
+      setIsStopping(false)
+    }
   }, [])
 
   return {
     messages,
     isStreaming,
+    isStopping,
     sendMessage,
     stopStreaming,
     conversations,
@@ -307,7 +348,10 @@ function applyEvent(msg: ChatMessage, evt: ChatStreamEvent): ChatMessage {
             : tc
         ),
       }
-    // thinking / round / done / error 不改消息结构
+    // 服务端确认中止：即使本地没来得及 abort（例如别的标签页触发），这里也能收敛
+    case "cancelled":
+      return { ...msg, stopped: true }
+    // thinking / round / turn / done / error 不改消息结构
     default:
       return msg
   }

@@ -75,9 +75,17 @@
 
 - 请求 body：
 ```json
-{ "message": "我的月度现金流怎么样？", "history": [{ "role": "user", "content": "..." }] }
+{
+  "message": "我的月度现金流怎么样？",
+  "conversation_id": 12,
+  "turn_id": "1f0c9e2a-…",
+  "history": [{ "role": "user", "content": "..." }]
+}
 ```
-`history` 是之前的消息，`role` ∈ `user|assistant|tool`。
+- `conversation_id`：新前端必传（服务端读库、裁剪、落库）；不传则走兼容模式或新建会话。
+- `turn_id`：本轮 id，前端生成（UUID）。停止按钮拿它调取消接口；不传时服务端补一个，
+  并在首帧 `turn` 事件里回显。
+- `history`：仅兼容旧前端；带 `conversation_id` 时被服务端忽略（安全边界）。
 
 - 响应：`Content-Type: text/event-stream`，每行 `data: <JSON>\n\n`，结尾 `data: [DONE]\n\n`。
 
@@ -85,13 +93,37 @@
 
 | type | 字段 | 说明 |
 |------|------|------|
+| `turn` | `turn_id: string` | **首帧**：本轮 id，取消接口按它定位 |
 | `thinking` | `content: string` | LLM 思考片段。前端接收但不展示（可留作未来可视化） |
 | `tool_call` | `id, name, arguments` | Agent 决定调用工具。`arguments` 是已解析的对象 |
 | `tool_result` | `id, result, status` | 工具执行返回。`status` ∈ `success\|error` |
 | `answer` | `content: string` | 最终回答的增量片段（可多次下发，前端拼接） |
 | `round` | `round: number` | Agent 进入第 N 轮循环 |
-| `done` | — | 流结束 |
+| `cancelled` | `turn_id, reason` | 服务端确认中止。`reason` ∈ `client\|disconnect` |
+| `done` | — | 流正常结束 |
 | `error` | `message: string` | 错误 |
+
+> 取消后流可能直接断（客户端已 abort），因此**不能依赖 `cancelled` 事件**判断是否停成功；
+> 以 `POST /api/chat/cancel` 的返回为准。
+
+### 停止生成：`POST /api/chat/cancel`
+
+```json
+{ "turn_id": "1f0c9e2a-…" }
+```
+
+响应（幂等，永远 200）：
+
+```json
+{ "cancelled": true, "done": true, "turn_id": "…", "reason": "client" }
+```
+
+- `cancelled`：这次调用是否置位了取消信号（重复调用返回 `true`，因为已处于取消态；
+  该轮已结束时返回 `false` + `done: true`）。
+- `done`：服务端是否**已收尾**（落库 + 释放会话锁）。为 `false` 说明等了 5s 还没收尾，
+  前端应先不要发下一条（会撞 409）。
+- 该轮被中止后，assistant 消息以 `interrupted: true` + `stop_reason` 落库：
+  **UI 照常展示**，但**整轮不进入模型上下文**（回放时跳过）。
 
 ### 对应现有 agent.py 的映射
 

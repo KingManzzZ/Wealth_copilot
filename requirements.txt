@@ -18,6 +18,10 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 
+# ---------- 测试（backend/tests/）----------
+# 路由层测试用 httpx 的 ASGI 客户端（不走网络）；缺失时该层自动跳过
+httpx>=0.27
+
 # ---------- RAG 检索模块（backend/RAG_/）----------
 # 核心运行依赖：混合检索（稠密 + 稀疏）、重排、向量库、配置校验
 transformers>=4.51
