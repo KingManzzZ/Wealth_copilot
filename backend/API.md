@@ -218,10 +218,13 @@ GPT 式多会话：会话行**惰性创建**（发出首条消息时才建，空
 | `tool_calls` | JSON \| null | 仅 assistant：`[{id, name, arguments, result?, status}]` |
 | `interrupted` | boolean | 该轮被用户中止/断连。**UI 展示，但不进模型上下文**（回放跳过） |
 | `stop_reason` | string \| null | `client`（点了停止）/ `disconnect`（掉线） |
+| `turn_id` | string \| null | 一轮的 id（用户消息与助手消息共用），撤回按它定位 |
+| `withdrawn` | boolean | 已撤回。撤回后**不出现在消息列表、不进模型上下文**，行保留供审计 |
 
-- GET `/api/conversations/{id}/messages` → `[{id, role, content, tool_calls?, interrupted, stop_reason?}, ...]`；会话不存在 404
-- POST `/api/conversations/{id}/messages` body `{messages: [{role, content, tool_calls?, interrupted?, stop_reason?}]}` → `{conversation_id, title, saved}`；每轮对话一次批量写入
+- GET `/api/conversations/{id}/messages` → `[{id, role, content, tool_calls?, turn_id?, interrupted, stop_reason?}, ...]`；会话不存在 404
+- POST `/api/conversations/{id}/messages` body `{messages: [{role, content, tool_calls?, turn_id?, interrupted?, stop_reason?}]}` → `{conversation_id, title, saved}`；每轮对话一次批量写入
 - DELETE `/api/conversations/{id}` → 硬删，messages 由 `ON DELETE CASCADE` 级联清除
+- POST `/api/conversations/{id}/withdraw` body `{turn_id}` → **撤回一轮及其之后的所有轮次**：消息软删 + 这些轮次写过的数据还原；返回 `{turn_id, withdrawn_messages, turns_withdrawn, user_text, rollback}`。数据被改过则 409
 
 ## 3. 其他接口
 

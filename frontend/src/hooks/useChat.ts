@@ -6,6 +6,7 @@ import {
   fetchConversationMessages,
   listConversations,
   streamChat,
+  withdrawConversationTurn,
 } from "@/lib/api"
 import { emitChatTurnCompleted } from "@/lib/events"
 import type {
@@ -15,6 +16,7 @@ import type {
   HistoryMessage,
   StoredMessage,
   ToolCall,
+  WithdrawResult,
 } from "@/types"
 
 const uid = () => Math.random().toString(36).slice(2, 11)
@@ -79,6 +81,7 @@ function toChatMessage(m: StoredMessage): ChatMessage {
     toolCalls: m.tool_calls ?? [],
     // 历史里的中断轮次也要显示"已停止生成"，否则刷新后看起来像正常说完的
     stopped: m.interrupted === true,
+    turnId: m.turn_id,
     createdAt: Date.now(),
   }
 }
@@ -183,10 +186,16 @@ export function useChat() {
         }
       }
 
+      // 本轮 id 由前端生成：这样"刚发出就点停止"也有 id 可用，不必等服务端首帧。
+      // 同时把它挂在 user / assistant 两条消息上——撤回时按 turnId 找到整轮。
+      const turnId = newTurnId()
+      turnIdRef.current = turnId
+
       const userMsg: ChatMessage = {
         id: uid(),
         role: "user",
         content: trimmed,
+        turnId,
         createdAt: Date.now(),
       }
       const assistantMsg: ChatMessage = {
@@ -194,6 +203,7 @@ export function useChat() {
         role: "assistant",
         content: "",
         toolCalls: [],
+        turnId,
         createdAt: Date.now(),
       }
       assistantIdRef.current = assistantMsg.id
@@ -207,10 +217,6 @@ export function useChat() {
       // 已经收到的 token 留在界面上（不撤回），只是不再追加。
       const controller = new AbortController()
       abortRef.current = controller
-
-      // 本轮 id 由前端生成：这样"刚发出就点停止"也有 id 可用，不必等服务端首帧
-      const turnId = newTurnId()
-      turnIdRef.current = turnId
 
       try {
         for await (const evt of streamChat(
@@ -306,12 +312,33 @@ export function useChat() {
     }
   }, [])
 
+  /**
+   * 撤回一轮：服务端把这一轮的对话标为撤回、还原这一轮写过的数据。
+   *
+   * 成功后用**服务端消息**覆盖本地（撤回是服务端行为，不能只改 UI），
+   * 并广播一次数据失效让仪表盘重拉；返回结果供调用方把用户原话回填输入框。
+   */
+  const withdrawTurn = useCallback(
+    async (turnId: string): Promise<WithdrawResult> => {
+      const cid = conversationIdRef.current
+      if (cid === null) throw new Error("当前没有会话")
+      const result = await withdrawConversationTurn(cid, turnId)
+      const stored = await fetchConversationMessages(cid)
+      if (stored !== null) syncRef(stored.map(toChatMessage))
+      void refreshConversations()
+      emitChatTurnCompleted({ conversationId: cid, toolNames: [] })
+      return result
+    },
+    [refreshConversations]
+  )
+
   return {
     messages,
     isStreaming,
     isStopping,
     sendMessage,
     stopStreaming,
+    withdrawTurn,
     conversations,
     conversationId,
     selectConversation,

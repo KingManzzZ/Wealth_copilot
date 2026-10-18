@@ -24,6 +24,8 @@ export interface ChatMessage {
   toolCalls?: ToolCall[]
   /** 用户点了"停止生成"：内容是被截断的（仅前端标记，不落库） */
   stopped?: boolean
+  /** 本轮 id：后端用它把 user + assistant 归为一轮，撤回时按它定位 */
+  turnId?: string
   createdAt: number
 }
 
@@ -84,6 +86,21 @@ export interface StoredMessage {
   tool_calls?: ToolCall[]
   /** 该轮被用户中止/断连：UI 显示"已停止生成"，但不参与模型上下文 */
   interrupted?: boolean
+  /** 一轮对话的 id（撤回时按它定位） */
+  turn_id?: string
+}
+
+/** 撤回一页对话的结果：消息数 + 数据回滚摘要 + 用户原话（回填输入框用） */
+export interface WithdrawResult {
+  turn_id: string
+  withdrawn_messages: number
+  user_text: string
+  rollback: {
+    compensated: number
+    noop: number
+    conflicts: number
+    failed: number
+  }
 }
 
 // ===== 用户画像（按拆表后结构） =====

@@ -11,6 +11,7 @@ import type {
   HistoryMessage,
   StoredMessage,
   Transaction,
+  WithdrawResult,
 } from "@/types"
 import {
   mockAssets,
@@ -333,6 +334,39 @@ export async function deleteConversationApi(id: number): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/**
+ * 撤回一轮对话：后端会把这一轮的用户消息 + 助手消息标为撤回，
+ * 并把这一轮写过的数据还原；返回用户原话，供输入框回填。
+ *
+ * 409 表示"只能撤回最后一轮"或"数据之后被改过"，detail 里带原因。
+ */
+export async function withdrawConversationTurn(
+  conversationId: number,
+  turnId: string
+): Promise<WithdrawResult> {
+  const res = await fetch(
+    `${API_BASE}/conversations/${conversationId}/withdraw`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ turn_id: turnId }),
+    }
+  )
+  if (!res.ok) {
+    let detail: unknown = `撤回失败（${res.status}）`
+    try {
+      const payload = await res.json()
+      detail = payload?.detail ?? detail
+    } catch {
+      // 非 JSON 响应：保留默认文案
+    }
+    const message =
+      typeof detail === "string" ? detail : (detail as { message?: string })?.message
+    throw new Error(message || "撤回失败")
+  }
+  return res.json()
 }
 
 /**

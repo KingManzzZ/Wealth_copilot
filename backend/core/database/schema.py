@@ -146,10 +146,10 @@ SCHEMA_SQL: str = """
         -- 保存用户、Agent 和工具之间的消息。
         -- 删除对话时级联删除关联消息。
         --
+        -- turn_id：一轮对话的 id（用户消息 + 助手消息共用），撤回时按它定位。
+        -- withdrawn：被用户撤回。撤回后**不进上下文、不出现在消息列表**，
+        -- 但行仍保留（审计 + 数据回滚的依据）。
         -- interrupted / stop_reason：本轮生成被用户中止或连接断开时置位。
-        -- 这类轮次**不进模型上下文**（见 services/replay.py）——半截回答会让模型
-        -- 以为"我已经说完了"，而工具也可能只执行了一部分；但 UI 仍要能显示它，
-        -- 所以落库而不是丢弃。
         -- ===================================================================
         CREATE TABLE IF NOT EXISTS messages (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -159,10 +159,54 @@ SCHEMA_SQL: str = """
             content           TEXT    NOT NULL,
             tool_calls        TEXT,
             tool_name         TEXT,
+            turn_id           TEXT,
             interrupted       INTEGER NOT NULL DEFAULT 0,
             stop_reason       TEXT,
+            withdrawn         INTEGER NOT NULL DEFAULT 0,
+            withdrawn_at      TEXT,
             created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
         );
+
+        -- ix_messages_turn 不能放在这里：旧库的 messages 表还没有 turn_id，
+        -- CREATE INDEX 会在补列之前失败。它由 _ensure_message_columns 在补列后创建。
+
+        -- ===================================================================
+        -- 8. turns：一轮生成的生命周期（撤回时判断"是否最后一轮"用）
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS turns (
+            turn_id         TEXT PRIMARY KEY,
+            conversation_id INTEGER NOT NULL,
+            status          TEXT    NOT NULL,   -- running | completed | interrupted | withdrawn
+            created_at      TEXT    NOT NULL,
+            finished_at     TEXT
+        );
+
+        -- ===================================================================
+        -- 9. turn_writes：一轮写入的**差异日志**（撤回时按它还原）
+        --
+        -- 只在轮次结束时生成：对比"轮前快照"与"轮后快照"，把变化的行记下来。
+        -- 这样不需要在每个写工具里埋点，也不会漏掉任何一条写。
+        --
+        -- op: insert（before 为空）/ delete（after 为空）/ update
+        -- status: applied（待撤回）| compensated（已撤回）| conflict（数据被改过，跳过）
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS turn_writes (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            turn_id         TEXT    NOT NULL,
+            conversation_id INTEGER NOT NULL,
+            table_name      TEXT    NOT NULL,
+            pk_json         TEXT    NOT NULL,
+            op              TEXT    NOT NULL,
+            before_json     TEXT,
+            after_json      TEXT,
+            status          TEXT    NOT NULL DEFAULT 'applied',
+            detail          TEXT,
+            created_at      TEXT    NOT NULL,
+            compensated_at  TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_turn_writes_turn
+            ON turn_writes (turn_id, status);
 
         CREATE INDEX IF NOT EXISTS ix_messages_conversation_created
             ON messages (conversation_id, created_at);
@@ -178,10 +222,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_message_columns(conn: sqlite3.Connection) -> None:
-    """给旧库补上 ``messages.interrupted`` / ``stop_reason`` 两列。
+    """给旧库补齐 messages 的新列（幂等）。
 
     用 ``ALTER TABLE ADD COLUMN`` 而不是重建表：SQLite 的 ADD COLUMN 只改元数据、
-    不重写行；旧行默认 0/NULL，语义正好是"历史上没有被打断的轮次"。
+    不重写行；旧行默认 0/NULL，语义正好是"历史上没有被打断/撤回的轮次"。
 
     为什么不靠建表脚本：``CREATE TABLE IF NOT EXISTS`` 对已存在的表是空操作，
     **不会补列**（SQLite 的既定行为），所以必须有这一步。
@@ -191,14 +235,22 @@ def _ensure_message_columns(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         return  # 连 messages 表都还没有，交给建表脚本
 
-    if "interrupted" not in existing:
-        conn.execute(
-            "ALTER TABLE messages ADD COLUMN interrupted INTEGER NOT NULL DEFAULT 0"
-        )
-        print("[schema] messages 表已补列：interrupted")
-    if "stop_reason" not in existing:
-        conn.execute("ALTER TABLE messages ADD COLUMN stop_reason TEXT")
-        print("[schema] messages 表已补列：stop_reason")
+    additions = {
+        "turn_id": "TEXT",
+        "interrupted": "INTEGER NOT NULL DEFAULT 0",
+        "stop_reason": "TEXT",
+        "withdrawn": "INTEGER NOT NULL DEFAULT 0",
+        "withdrawn_at": "TEXT",
+    }
+    for column, ddl in additions.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE messages ADD COLUMN {column} {ddl}")
+            print(f"[schema] messages 表已补列：{column}")
+
+    # 索引必须等 turn_id 补完再建，否则旧库会在 executescript 阶段就失败
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_messages_turn ON messages (turn_id)"
+    )
 
 
 def _drop_legacy_cashflow(conn: sqlite3.Connection) -> None:

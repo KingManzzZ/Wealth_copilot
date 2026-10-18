@@ -264,3 +264,4 @@ python tests/cancel/run_tests.py -k token   # 只跑取消令牌
 | 工具中途取消 | 只能检查点，不能强杀（见 S1-2 边界） |
 | legacy 兼容路径取消 | 只传 `history` 的旧路径不注册轮次，取消对它无效（该路径也不落库、无锁） |
 | 取消等待上限 | 5s 是拍的：worker 卡在工具里时够用，但更长的工具要重新评估 |
+| **回滚已发生的写入** | 取消只停生成、不撤销副作用。**撤回**（对话 + 数据）已实现：`POST /api/conversations/{id}/withdraw`，详见 [`../Investigation/单轮次状态回滚/`](../Investigation/单轮次状态回滚/) |

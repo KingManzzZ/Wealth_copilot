@@ -70,6 +70,7 @@ from core.services.conversations import (
     create_conversation,
     get_conversation_messages,
 )
+from core.services import turn_state
 from core.services.replay import INTERRUPTED_PAYLOAD, normalize_history
 
 router = APIRouter()
@@ -137,6 +138,20 @@ def _unregister(turn: TurnCancel) -> None:
 def _lookup(turn_id: str) -> TurnCancel | None:
     with _REGISTRY_LOCK:
         return _TURNS.get(turn_id)
+
+
+def stop_turn(conversation_id: int, reason: str = "withdraw") -> bool:
+    """让某会话正在进行的一轮停下来，并等它收尾（落库 + 写集 + 解锁）。
+
+    返回 ``True`` 表示该会话当前没有进行中的轮次（或已收尾），可以安全撤回。
+    撤回接口先调它，再读 `turn_writes`——否则可能读到写集的中间状态。
+    """
+    with _REGISTRY_LOCK:
+        turn = _ACTIVE.get(conversation_id)
+    if turn is None:
+        return True
+    turn.cancel(reason)
+    return turn.wait_done(CANCEL_WAIT_SECONDS)
 
 
 def _silence_task(task: "asyncio.Task") -> None:
@@ -223,15 +238,22 @@ class _AssistantTurn:
         return message
 
 
-def _persist(conversation_id: int, turn: _AssistantTurn, cancel: TurnCancel) -> None:
+def _persist(
+    conversation_id: int,
+    turn: _AssistantTurn,
+    cancel: TurnCancel,
+    turn_id: str,
+) -> None:
     """落库助手消息。失败只记日志——不能影响已经发给用户的流。
 
     被中止的轮次会带上 ``interrupted`` / ``stop_reason``：它仍要落库（UI 要展示），
     但回放时会整轮跳过（见 ``services/replay.py``）。
+    ``turn_id`` 是"撤回这一轮"的锚点：用户消息与助手消息共用它。
     """
     message = turn.to_message()
     if message is None:
         return
+    message["turn_id"] = turn_id
     if cancel.cancelled:
         message["interrupted"] = True
         message["stop_reason"] = cancel.reason or "client"
@@ -321,8 +343,20 @@ async def chat(request: Request, payload: ChatRequest):
         await asyncio.to_thread(
             append_messages,
             conversation_id,
-            [{"role": "user", "content": payload.message}],
+            [{"role": "user", "content": payload.message, "turn_id": turn_id}],
         )
+        # 轮前快照：撤回时靠它把这个轮次写过的行还原。
+        # 快照失败不阻断生成——只是这一轮之后不可撤回数据（记日志即可）。
+        try:
+            before = await asyncio.to_thread(
+                turn_state.begin, turn_id, conversation_id
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[chat] turn={turn_id} ⚠️ 轮前快照失败，本轮将不可撤回数据："
+                f"{type(exc).__name__}: {exc}"
+            )
+            before = None
     except Exception:
         _unregister(turn)
         raise
@@ -359,8 +393,23 @@ async def chat(request: Request, payload: ChatRequest):
             # 嵌套 try/finally 保证：即使落库本身抛错，锁也一定释放、done 一定置位，
             # 否则前端会一直 409，且取消接口要等到超时才返回。
             try:
-                _persist(conversation_id, state, turn)
+                _persist(conversation_id, state, turn, turn_id)
             finally:
+                # 轮后差异：把这一轮写过的行记进 turn_writes，撤回时按它还原。
+                # 放在 mark_done 之前——撤回接口等到 done 之后就能读到完整的写集。
+                if before is not None:
+                    try:
+                        turn_state.finish(
+                            turn_id,
+                            conversation_id,
+                            before,
+                            "interrupted" if turn.cancelled else "completed",
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        print(
+                            f"[chat] turn={turn_id} ⚠️ 写集记录失败："
+                            f"{type(exc).__name__}: {exc}"
+                        )
                 _unregister(turn)
                 turn.mark_done()
                 print(

@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react"
 import { motion } from "framer-motion"
+import { Undo2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ChatMessage } from "@/types"
 import { evidenceIndexes, knowledgeState } from "@/lib/evidence"
@@ -16,9 +17,12 @@ import { ToolCallGroup } from "./tool-call-card"
 export function MessageBubble({
   message,
   onCitation,
+  onWithdraw,
 }: {
   message: ChatMessage
   onCitation: (index: number) => void
+  /** 只有最后一轮的回答才给这个回调；点击撤回整轮（对话 + 数据） */
+  onWithdraw?: () => void
 }) {
   const isUser = message.role === "user"
   const isEmpty =
@@ -76,6 +80,18 @@ export function MessageBubble({
 
       {message.toolCalls && message.toolCalls.length > 0 && (
         <ToolCallGroup toolCalls={message.toolCalls} />
+      )}
+
+      {onWithdraw && (
+        <button
+          type="button"
+          onClick={onWithdraw}
+          className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+          title="撤回这条及之后的对话（不可恢复）"
+          aria-label="撤回这条及之后的对话"
+        >
+          <Undo2 className="h-3.5 w-3.5" />
+        </button>
       )}
     </div>
   )

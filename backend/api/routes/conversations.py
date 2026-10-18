@@ -15,6 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from core.services import turn_state
 from core.services.conversations import (
     append_messages,
     create_conversation,
@@ -34,10 +35,15 @@ class MessageIn(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     tool_calls: list | None = None
+    turn_id: str | None = None
 
 
 class AppendMessagesRequest(BaseModel):
     messages: list[MessageIn]
+
+
+class WithdrawRequest(BaseModel):
+    turn_id: str
 
 
 @router.get("/conversations")
@@ -79,3 +85,46 @@ def delete_conversation_endpoint(conversation_id: int):
     if not delete_conversation(conversation_id):
         raise HTTPException(status_code=404, detail=f"会话 {conversation_id} 不存在")
     return {"ok": True}
+
+
+@router.post("/conversations/{conversation_id}/withdraw")
+def withdraw_turn(conversation_id: int, body: WithdrawRequest):
+    """撤回一轮**及其之后的所有轮次**：消息消失 + 这些轮次写过的数据还原。
+
+    - 从这一轮起（含）后面的对话一起撤，保证上下文不前后矛盾；
+    - 如果这一轮还在生成，先停下来再撤；
+    - 数据在这些轮次之后被改过 → 整体放弃并返回 409（不覆盖用户的修改）。
+    """
+    if get_conversation_messages(conversation_id) is None:
+        raise HTTPException(status_code=404, detail=f"会话 {conversation_id} 不存在")
+
+    # 延迟导入：chat 路由与 conversations 路由互不依赖，但 stop_turn 在 chat 里
+    from api.routes.chat import stop_turn
+
+    if not stop_turn(conversation_id, "withdraw"):
+        raise HTTPException(
+            status_code=409,
+            detail="这一轮仍在停止中，请稍后重试撤回",
+        )
+
+    try:
+        return turn_state.withdraw(conversation_id, body.turn_id)
+    except turn_state.TurnNotFound:
+        raise HTTPException(status_code=404, detail="这一轮不存在或已撤回")
+    except turn_state.NoWritesRecorded:
+        raise HTTPException(status_code=409, detail="这一轮尚未收尾，暂时不能撤回")
+    except turn_state.DataConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "这些轮次写过的数据之后被修改过，已放弃撤回（不会覆盖你的修改）",
+                "conflicts": [
+                    {
+                        "table": item["write"]["table_name"],
+                        "op": item["write"]["op"],
+                        "reason": item["reason"],
+                    }
+                    for item in exc.items
+                ],
+            },
+        )

@@ -75,9 +75,10 @@ def get_conversation_messages(conversation_id: int) -> list | None:
             return None
         rows = conn.execute(
             """
-            SELECT id, role, content, tool_calls, interrupted, stop_reason
+            SELECT id, role, content, tool_calls, turn_id,
+                   interrupted, stop_reason
             FROM messages
-            WHERE conversation_id = ?
+            WHERE conversation_id = ? AND withdrawn = 0
             ORDER BY id
             """,
             (conversation_id,),
@@ -90,8 +91,8 @@ def get_conversation_messages(conversation_id: int) -> list | None:
 def _row_to_message(row) -> dict:
     """将 messages 表行转为契约 dict；tool_calls JSON 解析失败时降级为空数组。
 
-    ``interrupted`` 一并返回：前端要靠它把历史里被中止的轮次也标成"已停止生成"，
-    否则刷新后同一个回答看起来像正常说完的。
+    ``turn_id`` 一并返回：前端要靠它发起"撤回这一轮"。
+    ``interrupted`` 让历史里被中止的轮次也能标成"已停止生成"。
     """
     message = {
         "id": row["id"],
@@ -99,6 +100,8 @@ def _row_to_message(row) -> dict:
         "content": row["content"],
         "interrupted": bool(row["interrupted"]),
     }
+    if row["turn_id"]:
+        message["turn_id"] = row["turn_id"]
     if row["stop_reason"]:
         message["stop_reason"] = row["stop_reason"]
     if row["tool_calls"]:
@@ -129,6 +132,8 @@ def append_messages(conversation_id: int, items: list) -> dict | None:
             if item.get("interrupted"):
                 entry["interrupted"] = True
                 entry["stop_reason"] = item.get("stop_reason") or "client"
+        if item.get("turn_id"):
+            entry["turn_id"] = item["turn_id"]
         cleaned.append(entry)
 
     now = _now()
@@ -147,8 +152,8 @@ def append_messages(conversation_id: int, items: list) -> dict | None:
                     """
                     INSERT INTO messages
                         (conversation_id, role, content, tool_calls,
-                         interrupted, stop_reason)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                         turn_id, interrupted, stop_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         conversation_id,
@@ -157,6 +162,7 @@ def append_messages(conversation_id: int, items: list) -> dict | None:
                         json.dumps(entry["tool_calls"], ensure_ascii=False)
                         if "tool_calls" in entry
                         else None,
+                        entry.get("turn_id"),
                         1 if entry.get("interrupted") else 0,
                         entry.get("stop_reason"),
                     ),
