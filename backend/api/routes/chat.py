@@ -63,6 +63,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from core import chat_stream
+from core.agent import turn_context
 from core.agent.cancel import TurnCancel, TurnCancelled
 from core.agent.context import prepare_history
 from core.services.conversations import (
@@ -377,6 +378,8 @@ async def chat(request: Request, payload: ChatRequest):
     state = _AssistantTurn()
 
     def worker() -> None:
+        # 提案工具（request_withdraw）靠线程本地上下文知道"当前会话是哪一轮"
+        turn_context.bind(conversation_id, turn_id)
         started = time.monotonic()
         try:
             for event in chat_stream(payload.message, history, cancel=turn):
@@ -412,6 +415,7 @@ async def chat(request: Request, payload: ChatRequest):
                         )
                 _unregister(turn)
                 turn.mark_done()
+                turn_context.clear()
                 print(
                     f"[chat] turn={turn_id} 会话={conversation_id} "
                     f"{'中止' if turn.cancelled else '完成'} "

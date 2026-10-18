@@ -319,10 +319,10 @@ export function useChat() {
    * 并广播一次数据失效让仪表盘重拉；返回结果供调用方把用户原话回填输入框。
    */
   const withdrawTurn = useCallback(
-    async (turnId: string): Promise<WithdrawResult> => {
+    async (turnId: string, truncate = true): Promise<WithdrawResult> => {
       const cid = conversationIdRef.current
       if (cid === null) throw new Error("当前没有会话")
-      const result = await withdrawConversationTurn(cid, turnId)
+      const result = await withdrawConversationTurn(cid, turnId, truncate)
       const stored = await fetchConversationMessages(cid)
       if (stored !== null) syncRef(stored.map(toChatMessage))
       void refreshConversations()

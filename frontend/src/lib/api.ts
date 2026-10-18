@@ -344,14 +344,15 @@ export async function deleteConversationApi(id: number): Promise<boolean> {
  */
 export async function withdrawConversationTurn(
   conversationId: number,
-  turnId: string
+  turnId: string,
+  truncate = true
 ): Promise<WithdrawResult> {
   const res = await fetch(
     `${API_BASE}/conversations/${conversationId}/withdraw`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ turn_id: turnId }),
+      body: JSON.stringify({ turn_id: turnId, truncate }),
     }
   )
   if (!res.ok) {

@@ -241,7 +241,7 @@
 
 ## 附：当前实现统计
 
-**已实现工具：22 个**（分布在 6 个 `tools_hub` 模块中）
+**已实现工具：23 个**（分布在 7 个 `tools_hub` 模块中；不含 RAG 的 `search_knowledge`）
 
 | 模块 | 工具数 | 工具列表 |
 |------|--------|----------|
@@ -251,6 +251,7 @@
 | `goal_tools.py` | 5 | `create_goal`, `get_goals`, `update_goal`, `complete_goal_tool`, `calculate_goal_contribution` |
 | `transaction_tools.py` | 5 | `record_income`, `record_expense`, `get_transactions`, `update_transaction_tool`, `delete_transaction_tool` |
 | `cashflow_tools.py` | 2 | `get_monthly_cashflow`, `calculate_savings_rate` |
+| `withdraw_tools.py` | 1 | `request_withdraw`（**只读提案**：生成撤回确认卡片，不执行删除） |
 
 **暂未实现工具：34 个**
 

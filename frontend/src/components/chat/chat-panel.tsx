@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { History, PanelLeft, PanelRight, Sparkles, SquarePen, Trash2 } from "lucide-react"
 import { useChat } from "@/hooks/useChat"
 import { Button } from "@/components/ui/button"
 import { collectEvidence, type EvidenceGroup } from "@/lib/evidence"
+import { findWithdrawProposal, type WithdrawProposal } from "@/lib/withdraw"
 import type { ChatMessage, ChatSide, ConversationMeta } from "@/types"
 import { cn } from "@/lib/utils"
 import { EvidenceDrawer } from "./evidence-drawer"
@@ -40,6 +41,9 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState("")
   const [evidence, setEvidence] = useState<EvidenceView | null>(null)
   const [withdrawError, setWithdrawError] = useState<string | null>(null)
+  const [proposalPending, setProposalPending] = useState(false)
+  /** 被用户点过「取消」的提案（按消息 id 记，避免它一直弹） */
+  const [dismissedProposal, setDismissedProposal] = useState<string | null>(null)
 
   const currentTitle =
     conversations.find((c) => c.id === conversationId)?.title ?? null
@@ -47,6 +51,26 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
   // 撤回按钮挂在每条**用户消息**下面：含义是"回到发送这条之前"，
   // 所以这一轮和它之后的对话会一起撤掉（否则上下文矛盾）。
   const canWithdraw = !isStreaming && !isStopping
+
+  /**
+   * 模型通过 `request_withdraw` 提出的撤回提案。
+   *
+   * 只认**最后一条**提案；而且目标轮次必须还在消息里（撤回成功后它就不在了，
+   * 卡片要自动消失）。用户点过取消的也不再显示。
+   */
+  const proposalView = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]
+      if (message.role !== "assistant") continue
+      const proposal = findWithdrawProposal(message)
+      if (!proposal) continue
+      if (message.id === dismissedProposal) return null
+      const stillExists = messages.some((m) => m.turnId === proposal.turnId)
+      if (!stillExists) return null
+      return { messageId: message.id, proposal }
+    }
+    return null
+  }, [messages, dismissedProposal])
 
   // 新消息到达时滚到底部
   useEffect(() => {
@@ -89,6 +113,37 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
     },
     [canWithdraw, withdrawTurn]
   )
+
+  /**
+   * 确认模型提案：卡片上的「确认撤回」就是二次确认，不再额外弹窗。
+   * 成功后用服务端消息覆盖本地，卡片随目标轮次一起消失。
+   */
+  const confirmProposal = useCallback(
+    async (proposal: WithdrawProposal) => {
+      setProposalPending(true)
+      setWithdrawError(null)
+      try {
+        // 模型提案是"只撤这一轮"：当前这轮（提出请求的这轮）要保留
+        const result = await withdrawTurn(proposal.turnId, false)
+        setInputValue(result.user_text)
+        requestAnimationFrame(() => {
+          const el = inputRef.current
+          if (!el) return
+          el.focus()
+          el.setSelectionRange(el.value.length, el.value.length)
+        })
+      } catch (e) {
+        setWithdrawError((e as Error).message || "撤回失败")
+      } finally {
+        setProposalPending(false)
+      }
+    },
+    [withdrawTurn]
+  )
+
+  const dismissProposal = useCallback((messageId: string) => {
+    setDismissedProposal(messageId)
+  }, [])
 
   // 点击建议词：只填入输入框并聚焦，由用户手动发送
   const handlePick = (text: string) => {
@@ -165,6 +220,10 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
               .filter((item) => item.role === "user").length
             const showWithdraw =
               canWithdraw && m.role === "user" && Boolean(m.turnId)
+            const card =
+              proposalView && proposalView.messageId === m.id
+                ? proposalView.proposal
+                : null
             return (
               <motion.div
                 key={m.id}
@@ -179,6 +238,14 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
                     showWithdraw
                       ? () => handleWithdraw(m.turnId as string, turnCount)
                       : undefined
+                  }
+                  proposal={card ?? undefined}
+                  proposalPending={proposalPending}
+                  onConfirmProposal={
+                    card ? () => confirmProposal(card) : undefined
+                  }
+                  onDismissProposal={
+                    card ? () => dismissProposal(m.id) : undefined
                   }
                 />
               </motion.div>

@@ -52,6 +52,10 @@ class NoWritesRecorded(RuntimeError):
     """这一轮还在收尾（快照/差异没生成），暂时不能撤回。"""
 
 
+class NoWithdrawableTurn(LookupError):
+    """没有可撤回的轮次（例如当前是会话的第一轮，且只能撤"已完成"的轮次）。"""
+
+
 class DataConflict(RuntimeError):
     """这一轮写过、但数据在之后被改过；整体放弃撤回。"""
 
@@ -265,11 +269,112 @@ def _plan(conn, writes: list[dict]) -> tuple[list[dict], list[dict]]:
     return actions, conflicts
 
 
-def withdraw(conversation_id: int, turn_id: str) -> dict:
-    """撤回一轮**及其之后的所有轮次**：消息消失 + 数据还原（全有或全无）。
+def preview_withdraw(
+    conversation_id: int,
+    turn_id: str | None = None,
+    exclude_turn_id: str | None = None,
+) -> dict:
+    """**只读**：算出"撤回这一轮会发生什么"，供提案工具使用。
 
-    语义是"回到这条消息发送之前"：从这一轮起，后面的对话都建立在这轮之上，
-    所以一起撤掉，否则上下文会前后矛盾。
+    - ``turn_id`` 为空时，取"最近一个已完成的轮次"（排除 ``exclude_turn_id``，
+      也就是正在生成的这一轮）——用户说"把刚才那笔撤回"时就是这个语义；
+    - 不修改任何数据，只返回计数与文案素材。
+
+    抛 ``TurnNotFound`` / ``NoWithdrawableTurn``。
+    """
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, role, content, turn_id
+            FROM messages
+            WHERE conversation_id = ? AND withdrawn = 0
+            ORDER BY id
+            """,
+            (conversation_id,),
+        ).fetchall()
+        if not rows:
+            raise NoWithdrawableTurn("会话里没有可撤回的消息")
+
+        if turn_id:
+            start = next(
+                (i for i, r in enumerate(rows) if r["turn_id"] == turn_id), None
+            )
+            if start is None:
+                raise TurnNotFound(turn_id)
+        else:
+            statuses = {
+                row["turn_id"]: row["status"]
+                for row in conn.execute(
+                    "SELECT turn_id, status FROM turns WHERE conversation_id = ?",
+                    (conversation_id,),
+                ).fetchall()
+            }
+            ordered: list[str] = []
+            for row in rows:
+                tid = row["turn_id"]
+                if tid and tid not in ordered:
+                    ordered.append(tid)
+            candidates = [
+                tid
+                for tid in ordered
+                if tid != exclude_turn_id and statuses.get(tid) != "running"
+            ]
+            if not candidates:
+                raise NoWithdrawableTurn("没有可撤回的上一轮对话")
+            turn_id = candidates[-1]
+            start = next(
+                i for i, r in enumerate(rows) if r["turn_id"] == turn_id
+            )
+
+        target_status = conn.execute(
+            "SELECT status FROM turns WHERE turn_id = ? AND conversation_id = ?",
+            (turn_id, conversation_id),
+        ).fetchone()
+        if target_status is None or target_status["status"] == "withdrawn":
+            raise TurnNotFound(turn_id)
+        if target_status["status"] == "running":
+            raise NoWritesRecorded(turn_id)
+
+        # 提案只针对**这一轮**：用户说"把刚才那笔撤回"时，当前正在进行的这一轮
+        # （也就是提出请求的这轮）必须保留，所以不截断。
+        affected = [row for row in rows if row["turn_id"] == turn_id]
+        affected_turns = [turn_id] if affected else []
+
+        writes = 0
+        if affected_turns:
+            placeholders = ", ".join(["?"] * len(affected_turns))
+            writes = conn.execute(
+                f"""
+                SELECT COUNT(*) FROM turn_writes
+                WHERE conversation_id = ? AND status = 'applied'
+                  AND turn_id IN ({placeholders})
+                """,
+                [conversation_id] + affected_turns,
+            ).fetchone()[0]
+
+        user_text = next(
+            (r["content"] for r in affected if r["role"] == "user"), ""
+        )
+        return {
+            "turn_id": turn_id,
+            "conversation_id": conversation_id,
+            "affected_turns": len(affected_turns),
+            "affected_messages": len(affected),
+            "affected_writes": int(writes),
+            "user_text": user_text,
+        }
+    finally:
+        conn.close()
+
+
+def withdraw(conversation_id: int, turn_id: str, truncate: bool = True) -> dict:
+    """撤回一轮：消息消失 + 数据还原（全有或全无）。
+
+    - ``truncate=True``（默认，界面「↩」）：撤回这一轮**及其之后**的全部轮次——
+      语义是"回到发送这条之前"；
+    - ``truncate=False``（模型提案）：只撤这一轮，保留后面的对话——
+      语义是"把刚才那轮撤回，但我现在这句话还在"。
 
     返回摘要：``{turn_id, withdrawn_messages, turns_withdrawn, user_text, rollback}``。
     """
@@ -304,8 +409,14 @@ def withdraw(conversation_id: int, turn_id: str) -> dict:
         if start is None:
             raise TurnNotFound(turn_id)
 
-        affected = rows[start:]
-        start_id = affected[0]["id"]
+        if truncate:
+            affected = rows[start:]
+            start_id = affected[0]["id"] if affected else 0
+        else:
+            affected = [item for item in rows if item["turn_id"] == turn_id]
+            start_id = 0
+        if not affected:
+            raise TurnNotFound(turn_id)
         affected_turns: list[str] = []
         for item in affected:
             if item["turn_id"] and item["turn_id"] not in affected_turns:
@@ -351,15 +462,25 @@ def withdraw(conversation_id: int, turn_id: str) -> dict:
             (item["content"] for item in affected if item["role"] == "user"), ""
         )
 
-        # 截断：从这一轮的第一条消息起，全部标记撤回
-        conn.execute(
-            """
-            UPDATE messages
-            SET withdrawn = 1, withdrawn_at = ?
-            WHERE conversation_id = ? AND id >= ? AND withdrawn = 0
-            """,
-            (now, conversation_id, start_id),
-        )
+        # 截断：从这一轮的第一条消息起全部撤回；单轮：只撤这一轮
+        if truncate:
+            conn.execute(
+                """
+                UPDATE messages
+                SET withdrawn = 1, withdrawn_at = ?
+                WHERE conversation_id = ? AND id >= ? AND withdrawn = 0
+                """,
+                (now, conversation_id, start_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE messages
+                SET withdrawn = 1, withdrawn_at = ?
+                WHERE conversation_id = ? AND turn_id = ? AND withdrawn = 0
+                """,
+                (now, conversation_id, turn_id),
+            )
         if affected_turns:
             placeholders = ", ".join(["?"] * len(affected_turns))
             conn.execute(

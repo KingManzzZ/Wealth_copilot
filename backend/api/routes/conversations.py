@@ -44,6 +44,9 @@ class AppendMessagesRequest(BaseModel):
 
 class WithdrawRequest(BaseModel):
     turn_id: str
+    #: True（默认）= 撤回这一轮及其之后的全部（界面「↩」的语义）
+    #: False = 只撤这一轮（模型提案的语义：保留当前这轮对话）
+    truncate: bool = True
 
 
 @router.get("/conversations")
@@ -108,7 +111,7 @@ def withdraw_turn(conversation_id: int, body: WithdrawRequest):
         )
 
     try:
-        return turn_state.withdraw(conversation_id, body.turn_id)
+        return turn_state.withdraw(conversation_id, body.turn_id, truncate=body.truncate)
     except turn_state.TurnNotFound:
         raise HTTPException(status_code=404, detail="这一轮不存在或已撤回")
     except turn_state.NoWritesRecorded:

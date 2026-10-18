@@ -41,6 +41,7 @@ sys.modules.setdefault("run_tests", sys.modules[__name__])
 
 TEST_MODULES = [
     "test_withdraw.py",
+    "test_proposal_tool.py",
     "test_withdraw_route.py",
 ]
 

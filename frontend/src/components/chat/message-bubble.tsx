@@ -4,9 +4,11 @@ import { Undo2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ChatMessage } from "@/types"
 import { evidenceIndexes, knowledgeState } from "@/lib/evidence"
+import type { WithdrawProposal } from "@/lib/withdraw"
 import { KnowledgeNotice } from "./knowledge-notice"
 import { Markdown } from "./markdown"
 import { ToolCallGroup } from "./tool-call-card"
+import { WithdrawProposalCard } from "./withdraw-proposal-card"
 
 /**
  * 单条消息。
@@ -18,11 +20,20 @@ export function MessageBubble({
   message,
   onCitation,
   onWithdraw,
+  proposal,
+  proposalPending,
+  onConfirmProposal,
+  onDismissProposal,
 }: {
   message: ChatMessage
   onCitation: (index: number) => void
-  /** 只有最后一轮的回答才给这个回调；点击撤回整轮（对话 + 数据） */
+  /** 用户消息下的「↩」：撤回这条及之后的对话 */
   onWithdraw?: () => void
+  /** 模型提出的撤回提案（只读工具返回），渲染成确认卡片 */
+  proposal?: WithdrawProposal
+  proposalPending?: boolean
+  onConfirmProposal?: () => void
+  onDismissProposal?: () => void
 }) {
   const isUser = message.role === "user"
   const isEmpty =
@@ -80,6 +91,15 @@ export function MessageBubble({
 
       {message.toolCalls && message.toolCalls.length > 0 && (
         <ToolCallGroup toolCalls={message.toolCalls} />
+      )}
+
+      {proposal && onConfirmProposal && onDismissProposal && (
+        <WithdrawProposalCard
+          proposal={proposal}
+          pending={Boolean(proposalPending)}
+          onConfirm={onConfirmProposal}
+          onDismiss={onDismissProposal}
+        />
       )}
 
       {onWithdraw && (

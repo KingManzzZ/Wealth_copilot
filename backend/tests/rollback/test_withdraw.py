@@ -141,6 +141,28 @@ def check_withdraw_middle_keeps_earlier():
         eq(contents, ["甲", "好的"], "只保留乙之前的轮次")
 
 
+def check_single_turn_withdraw_keeps_later():
+    """模型提案走单轮撤回：只撤目标轮，当前这轮对话保留。"""
+    with _support.temp_database():
+        cid = conv.create_conversation()["id"]
+        _support.run_turn(
+            cid, "s1", "第一轮", write=lambda: add_transaction("expense", 10, "餐饮", "2026-10-18T10:00:00")
+        )
+        _support.run_turn(
+            cid, "s2", "第二轮", write=lambda: add_transaction("expense", 20, "交通", "2026-10-18T11:00:00")
+        )
+
+        result = turn_state.withdraw(cid, "s1", truncate=False)
+
+        eq(result["turns_withdrawn"], 1, "只撤一轮")
+        eq([t["amount"] for t in list_transactions()], [20], "只还原第一轮的写入")
+        eq(
+            [m["content"] for m in conv.get_conversation_messages(cid)],
+            ["第二轮", "好的"],
+            "第二轮的对话应保留",
+        )
+
+
 def check_repeat_withdraw_is_not_found():
     with _support.temp_database():
         cid = conv.create_conversation()["id"]
