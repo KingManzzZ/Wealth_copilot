@@ -217,3 +217,163 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   Markdown 正文（Agent 回答）
+   不引入 @tailwindcss/typography：这里只覆盖本项目实际出现的元素，
+   体积与可控性都更好 —— 表格 / 引用块 / 列表才是 Agent 输出的主力。
+   颜色一律走 token，深色模式自动跟随。
+   ============================================================ */
+.wp-markdown {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.wp-markdown > * + * {
+  margin-top: 0.65em;
+}
+
+.wp-markdown > :first-child {
+  margin-top: 0;
+}
+
+.wp-markdown h1,
+.wp-markdown h2,
+.wp-markdown h3,
+.wp-markdown h4 {
+  margin-top: 1em;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+.wp-markdown h1 {
+  font-size: 1.15rem;
+}
+.wp-markdown h2 {
+  font-size: 1.05rem;
+}
+.wp-markdown h3 {
+  font-size: 0.975rem;
+}
+.wp-markdown h4 {
+  font-size: 0.9rem;
+}
+
+.wp-markdown strong {
+  font-weight: 650;
+}
+
+.wp-markdown ul,
+.wp-markdown ol {
+  padding-left: 1.2rem;
+}
+.wp-markdown ul {
+  list-style: disc;
+}
+.wp-markdown ol {
+  list-style: decimal;
+}
+.wp-markdown li {
+  margin-top: 0.2em;
+}
+.wp-markdown li > ul,
+.wp-markdown li > ol {
+  margin-top: 0.2em;
+}
+.wp-markdown li::marker {
+  color: var(--muted-foreground);
+}
+
+.wp-markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wp-markdown blockquote {
+  border-left: 2.5px solid color-mix(in oklch, var(--primary) 45%, transparent);
+  padding-left: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.wp-markdown code {
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.35rem;
+  background: var(--muted);
+  font-size: 0.8125em;
+}
+.wp-markdown pre {
+  overflow-x: auto;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.65rem;
+  background: var(--muted);
+}
+.wp-markdown pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 0.8125rem;
+}
+
+.wp-markdown table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.wp-markdown th,
+.wp-markdown td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.wp-markdown th {
+  background: var(--muted);
+  font-weight: 600;
+}
+
+.wp-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.wp-markdown input[type="checkbox"] {
+  margin-right: 0.35rem;
+}
+
+/* 引用 chip：正文里的 [1] → 可点小胶囊，点开右侧证据抽屉 */
+.wp-markdown .citation-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.28rem;
+  margin: 0 0.12rem;
+  transform: translateY(-0.06em);
+  border: 1px solid color-mix(in oklch, var(--primary) 35%, transparent);
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+.wp-markdown .citation-chip:hover {
+  background: color-mix(in oklch, var(--primary) 22%, transparent);
+  border-color: color-mix(in oklch, var(--primary) 55%, transparent);
+}
+.wp-markdown .citation-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+

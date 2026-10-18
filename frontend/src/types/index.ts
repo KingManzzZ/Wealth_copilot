@@ -22,6 +22,8 @@ export interface ChatMessage {
   content: string
   /** assistant 消息可能附带一轮工具调用 */
   toolCalls?: ToolCall[]
+  /** 用户点了"停止生成"：内容是被截断的（仅前端标记，不落库） */
+  stopped?: boolean
   createdAt: number
 }
 

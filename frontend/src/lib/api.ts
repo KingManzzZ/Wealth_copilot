@@ -342,16 +342,24 @@ export async function deleteConversationApi(id: number): Promise<boolean> {
  *
  * `conversationId` 给了就走**服务端权威路径**：后端自己从库里读历史、做裁剪并落库，
  * 此时 `history` 会被忽略（仍然发过去，是为了兼容尚未升级的后端——它只认 history）。
+ *
+ * `signal` 用于「停止生成」：中止后 fetch 的响应体会 reject，
+ * 调用方（useChat）据此把消息标记为已截断，而不是当作错误。
  */
 export async function* streamChat(
   message: string,
   history: HistoryMessage[],
-  conversationId?: number | null
+  conversationId?: number | null,
+  signal?: AbortSignal
 ): AsyncGenerator<ChatStreamEvent> {
   const online = await detectBackendStatus()
 
   if (online === "offline") {
-    yield* mockStreamChat(message)
+    // mock 分支也要响应停止：否则点了停止仍在逐条吐字，看起来像按钮失效
+    for await (const event of mockStreamChat(message)) {
+      if (signal?.aborted) throw abortStream()
+      yield event
+    }
     return
   }
 
@@ -363,6 +371,7 @@ export async function* streamChat(
       history,
       ...(conversationId != null ? { conversation_id: conversationId } : {}),
     }),
+    signal,
   })
   if (!res.ok || !res.body) throw new Error(`chat failed: ${res.status}`)
 
@@ -370,22 +379,33 @@ export async function* streamChat(
   const decoder = new TextDecoder()
   let buffer = ""
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split("\n")
-    buffer = lines.pop() ?? ""
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith("data:")) continue
-      const payload = trimmed.slice(5).trim()
-      if (payload === "[DONE]") return
-      try {
-        yield JSON.parse(payload) as ChatStreamEvent
-      } catch {
-        // 忽略无法解析的行
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split("\n")
+      buffer = lines.pop() ?? ""
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith("data:")) continue
+        const payload = trimmed.slice(5).trim()
+        if (payload === "[DONE]") return
+        try {
+          yield JSON.parse(payload) as ChatStreamEvent
+        } catch {
+          // 忽略无法解析的行
+        }
       }
     }
+  } finally {
+    // 主动中止时 reader 仍处于读取中，取消它避免连接悬挂；
+    // 已经读完的情况下 cancel 是无害的
+    void reader.cancel().catch(() => {})
   }
+}
+
+/** 与浏览器 fetch 中止时同名的错误，便于上层用 name === "AbortError" 统一判断 */
+function abortStream(): DOMException {
+  return new DOMException("已停止生成", "AbortError")
 }

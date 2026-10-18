@@ -94,6 +94,8 @@ export function useChat() {
   const assistantIdRef = useRef<string | null>(null)
   const conversationIdRef = useRef<number | null>(null)
   const messagesRef = useRef<ChatMessage[]>([])
+  /** 当前流的取消句柄；null 表示没有正在进行的生成 */
+  const abortRef = useRef<AbortController | null>(null)
 
   // 用 ref 同步最新 messages，避免闭包捕获旧值
   const syncRef = (next: ChatMessage[]) => {
@@ -185,8 +187,18 @@ export function useChat() {
       syncRef([...messagesRef.current, userMsg, assistantMsg])
       setIsStreaming(true)
 
+      // 每轮一个 AbortController：停止按钮调 abort()，fetch 的 body 流会直接 reject。
+      // 已经收到的 token 留在界面上（不撤回），只是不再追加。
+      const controller = new AbortController()
+      abortRef.current = controller
+
       try {
-        for await (const evt of streamChat(trimmed, history, convId)) {
+        for await (const evt of streamChat(
+          trimmed,
+          history,
+          convId,
+          controller.signal
+        )) {
           const current = messagesRef.current
           syncRef(
             current.map((m) =>
@@ -195,18 +207,25 @@ export function useChat() {
           )
         }
       } catch (e) {
+        // 主动中止不是错误：不清空、不追加"[错误]"，只把这条回答标记为被截断
+        const aborted =
+          (e as Error | undefined)?.name === "AbortError" ||
+          controller.signal.aborted
         const current = messagesRef.current
         syncRef(
           current.map((m) =>
             m.id === assistantIdRef.current
-              ? {
-                  ...m,
-                  content: m.content + `\n\n[错误] ${(e as Error).message}`,
-                }
+              ? aborted
+                ? { ...m, stopped: true }
+                : {
+                    ...m,
+                    content: m.content + `\n\n[错误] ${(e as Error).message}`,
+                  }
               : m
           )
         )
       } finally {
+        if (abortRef.current === controller) abortRef.current = null
         // 若流在产出任何事件前就失败，assistant 消息既无内容也无工具调用，
         // 只可能残留一个空壳（错误已在 catch 追加到 content）。
         // 如果连错误都没留下（极端情况），移除这条空消息避免 typing 指示器常驻。
@@ -242,10 +261,16 @@ export function useChat() {
     [adoptConversation, isStreaming, refreshConversations]
   )
 
+  /** 停止当前生成：只中断流，不删除已收到的内容 */
+  const stopStreaming = useCallback(() => {
+    abortRef.current?.abort()
+  }, [])
+
   return {
     messages,
     isStreaming,
     sendMessage,
+    stopStreaming,
     conversations,
     conversationId,
     selectConversation,

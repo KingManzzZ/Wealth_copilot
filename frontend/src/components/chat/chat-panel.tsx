@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { History, PanelLeft, PanelRight, Sparkles, SquarePen, Trash2 } from "lucide-react"
 import { useChat } from "@/hooks/useChat"
 import { Button } from "@/components/ui/button"
-import type { ChatSide, ConversationMeta } from "@/types"
+import { collectEvidence, type EvidenceGroup } from "@/lib/evidence"
+import type { ChatMessage, ChatSide, ConversationMeta } from "@/types"
 import { cn } from "@/lib/utils"
+import { EvidenceDrawer } from "./evidence-drawer"
 import { MessageBubble } from "./message-bubble"
 import { ChatInput } from "./chat-input"
 
@@ -13,11 +15,18 @@ interface ChatPanelProps {
   onToggleSide: () => void
 }
 
+/** 证据抽屉的打开状态：哪条消息、哪条被点中 */
+interface EvidenceView {
+  groups: EvidenceGroup[]
+  activeIndex: number
+}
+
 export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
   const {
     messages,
     isStreaming,
     sendMessage,
+    stopStreaming,
     conversations,
     conversationId,
     selectConversation,
@@ -27,6 +36,7 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [inputValue, setInputValue] = useState("")
+  const [evidence, setEvidence] = useState<EvidenceView | null>(null)
 
   const currentTitle =
     conversations.find((c) => c.id === conversationId)?.title ?? null
@@ -36,6 +46,13 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
+
+  // 点正文里的 [n]：只在这条消息真的有证据时才开抽屉，否则 chip 根本不会渲染
+  const openEvidence = useCallback((message: ChatMessage, index: number) => {
+    const groups = collectEvidence(message)
+    if (!groups.some((g) => g.items.some((i) => i.index === index))) return
+    setEvidence({ groups, activeIndex: index })
+  }, [])
 
   // 点击建议词：只填入输入框并聚焦，由用户手动发送
   const handlePick = (text: string) => {
@@ -112,7 +129,10 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             >
-              <MessageBubble message={m} />
+              <MessageBubble
+                message={m}
+                onCitation={(index) => openEvidence(m, index)}
+              />
             </motion.div>
           ))}
         </div>
@@ -123,10 +143,19 @@ export function ChatPanel({ side, onToggleSide }: ChatPanelProps) {
           value={inputValue}
           onChange={setInputValue}
           onSend={handleSend}
+          onStop={stopStreaming}
+          streaming={isStreaming}
           disabled={isStreaming}
           textareaRef={inputRef}
         />
       </div>
+
+      <EvidenceDrawer
+        open={evidence !== null}
+        groups={evidence?.groups ?? []}
+        activeIndex={evidence?.activeIndex ?? null}
+        onClose={() => setEvidence(null)}
+      />
     </div>
   )
 }
