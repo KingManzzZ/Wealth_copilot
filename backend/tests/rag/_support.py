@@ -16,8 +16,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
+import shutil
 import sys
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,6 +35,32 @@ RAG_SRC = BACKEND_DIR / "RAG_" / "src"
 for p in (str(BACKEND_DIR), str(RAG_SRC)):
     if p not in sys.path:
         sys.path.insert(0, p)
+
+
+@contextlib.contextmanager
+def temp_database():
+    """一次性数据库（不碰 backend/db/data.db）。
+
+    默认落在仓库 ``.tmp/rag-tests``：Windows 沙箱下 ``%TEMP%`` 里的文件
+    SQLite 打不开（目录可写但 create 被拒），所以不能用 ``tempfile.mkdtemp``。
+    ``WP_TEST_TMP`` 可覆盖。
+    """
+    import core.database.connection as connection
+
+    base = os.environ.get("WP_TEST_TMP")
+    root = Path(base) if base else BACKEND_DIR.parent / ".tmp" / "rag-tests"
+    root.mkdir(parents=True, exist_ok=True)
+    db_dir = root / f"db-{uuid.uuid4().hex}"
+    db_dir.mkdir(parents=True, exist_ok=True)
+
+    prev_path, prev_checked = connection.DB_PATH, connection._schema_checked
+    connection.DB_PATH = str(db_dir / "data.db")
+    connection._schema_checked = False
+    try:
+        yield
+    finally:
+        connection.DB_PATH, connection._schema_checked = prev_path, prev_checked
+        shutil.rmtree(db_dir, ignore_errors=True)
 
 
 def env_flag(name: str) -> bool:
@@ -344,4 +373,5 @@ __all__ = [
     "rag_config_path",
     "tool_call_delta",
     "tool_round_script",
+    "temp_database",
 ]

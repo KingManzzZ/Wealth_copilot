@@ -253,6 +253,7 @@ v0.4 起按关系建模拆分，每张表都带 `user_id` 列（INTEGER NOT NULL
 | `turns` | 一轮生成的生命周期（撤回用） | turn_id, conversation_id, status, created_at, finished_at |
 | `turn_writes` | 一轮写入的差异日志（撤回时还原） | id, turn_id, conversation_id, table_name, pk_json, op, before_json, after_json, status |
 | `compactions` | 上下文压缩审计 | id, conversation_id, covered_from/until_message_id, before/after_tokens, summary, prompt_version, created_at |
+| `user_notes` | 跨会话非结构化记忆（L3） | id, user_id, category (preference/constraint/fact), content, source, status, expires_at, created_at, updated_at |
 
 UNIQUE 约束：
 - `basic_info`：`id`（单行模式固定为 OWNER_ID）
@@ -262,6 +263,10 @@ UNIQUE 约束：
 建表脚本见 `core/database/schema.py`（连接管理见 `core/database/connection.py`），各表读写逻辑在 `core/services/{basic_info,assets,debts,goals,cashflow,transactions}.py`。共用工具在 `core/services/_common.py`。
 
 **上下文压缩**：`core/agent/compaction.py` 在轮次边界检查规模，超过 `CONTEXT_COMPACT_AT`（默认 75%）时把"锚点之后、最近 6 轮之前"的轮次摘要进 `conversations.summary`，并写 `compactions` 审计；`context.prepare_history(state=...)` 只发锚点 + 摘要 + 最近消息。关闭：`CONTEXT_COMPACTION=0`。
+
+**跨会话记忆**：`core/services/memories.py` + `core/agent/l3.py`。每轮把 `user_notes` 中
+`source=user_stated`、未过期的前 12 条注入当前 user 消息（日期之后、用户原话之前），
+上限 1200 字符；`remember_note` / `forget_note` 工具负责写入与软删。
 
 ## 5. 变更记录
 

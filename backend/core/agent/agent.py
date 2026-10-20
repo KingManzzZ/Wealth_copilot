@@ -1,10 +1,8 @@
 import os
 import json
 
-from datetime import datetime
-
 from ..tools import tools_route, tools_schema
-from . import l1
+from . import l1, l3
 from .cancel import TurnCancel, TurnCancelled
 from .prompt import SYSTEM_PROMPT
 
@@ -26,8 +24,6 @@ client = OpenAI(
         api_key=os.getenv("LLM_API_KEY"),
         base_url=os.getenv("LLM_URL"))
 
-_WEEKDAYS = "一二三四五六日"
-
 
 def _system_content() -> str:
     """**稳定前缀**：只返回 SYSTEM_PROMPT，不含日期/用户名。
@@ -38,17 +34,13 @@ def _system_content() -> str:
     return SYSTEM_PROMPT
 
 
-def _user_content(message: str) -> str:
-    """把"当前日期"注入到**本次用户输入**里。
+def _user_content(message: str, notes=None) -> str:
+    """当前 user 消息 = 日期 + 跨会话记忆 + 用户原话。
 
-    模型自己不知道"今天"是哪天，而"本月""昨天"必须落到正确月份才能记账。
-    放到 user 消息而不是 system：前缀（system + tools）保持稳定。
+    日期与记忆都放在 user 消息里（而不是 system）：system + tools + history
+    的前缀保持稳定，提示词缓存才有机会命中；记忆是数据不是指令。
     """
-    now = datetime.now()
-    return (
-        f"[当前日期：{now.year}-{now.month:02d}-{now.day:02d}"
-        f"（星期{_WEEKDAYS[now.weekday()]}）]\n{message}"
-    )
+    return l3.compose_user_content(message, notes)
 
 
 
@@ -68,7 +60,7 @@ def _check(cancel: TurnCancel | None) -> None:
         cancel.check()
 
 
-def chat_stream(message, history=None, cancel: TurnCancel | None = None):
+def chat_stream(message, history=None, cancel: TurnCancel | None = None, notes=None):
 
     #messages为需要维护的总体消息列表
     messages:list[ChatCompletionMessageParam]=[
@@ -77,7 +69,7 @@ def chat_stream(message, history=None, cancel: TurnCancel | None = None):
 
     if history:
         messages.extend(history)
-    messages.append({"role":"user","content":_user_content(message)})
+    messages.append({"role":"user","content":_user_content(message, notes)})
 
     #连续"未知工具"计数（跨轮次累计，命中 UNKNOWN_TOOL_LIMIT 即提前收敛）
     unknown_streak = 0

@@ -32,7 +32,7 @@ TOOL_REGISTRY = {
         "complete_goal_tool", "calculate_goal_contribution", "record_income",
         "record_expense", "get_transactions", "update_transaction_tool",
         "delete_transaction_tool", "get_monthly_cashflow", "calculate_savings_rate",
-        "search_knowledge", "request_withdraw",
+        "search_knowledge", "request_withdraw", "remember_note", "forget_note",
     ]
 }
 
@@ -207,7 +207,7 @@ def main() -> int:
     p = r("search_policy")
     check("unknown_tool=True", p.get("unknown_tool") is True)
     check("有 did_you_mean", bool(p.get("did_you_mean")))
-    check("有 available_tools", len(p.get("available_tools") or []) == 24)
+    check("有 available_tools", len(p.get("available_tools") or []) == 26)
     check("有 hint", bool(p.get("hint")))
 
     print("[5] 参数校验：用 schema 而不是 Python 报错")

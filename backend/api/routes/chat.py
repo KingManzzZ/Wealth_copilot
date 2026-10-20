@@ -72,6 +72,7 @@ from core.services.conversations import (
     get_conversation_messages,
 )
 from core.services import turn_state
+from core.services import memories
 from core.services.replay import INTERRUPTED_PAYLOAD, normalize_history
 
 router = APIRouter()
@@ -287,8 +288,9 @@ def _legacy_response(request: ChatRequest) -> StreamingResponse:
     )
 
     def event_stream():
+        notes = memories.list_for_prompt()
         try:
-            for event in chat_stream(request.message, history):
+            for event in chat_stream(request.message, history, notes=notes):
                 yield sse_(event)
             yield _DONE_FRAME
         except Exception as exc:  # noqa: BLE001
@@ -335,6 +337,7 @@ async def chat(request: Request, payload: ChatRequest):
         # 顺序很重要：先读历史（**不含本轮用户消息**，chat_stream 会自己追加），
         # 再把用户消息落库。这样断流时用户输入不丢。
         rows = await asyncio.to_thread(get_conversation_messages, conversation_id) or []
+        notes = await asyncio.to_thread(memories.list_for_prompt)
         context_state = await asyncio.to_thread(
             compaction.load_state, conversation_id
         )
@@ -410,7 +413,7 @@ async def chat(request: Request, payload: ChatRequest):
         turn_context.bind(conversation_id, turn_id)
         started = time.monotonic()
         try:
-            for event in chat_stream(payload.message, history, cancel=turn):
+            for event in chat_stream(payload.message, history, cancel=turn, notes=notes):
                 state.feed(event)
                 push(("event", event))
         except TurnCancelled as exc:

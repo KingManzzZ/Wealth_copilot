@@ -232,6 +232,34 @@ SCHEMA_SQL: str = """
 
         CREATE INDEX IF NOT EXISTS ix_messages_conversation_created
             ON messages (conversation_id, created_at);
+
+        -- ===================================================================
+        -- 11. user_notes：跨会话的"非结构化偏好/约束/事实"（L3）
+        --
+        -- 为什么只补这一小块：财务事实（资产/负债/目标/流水）已经是结构化表，
+        -- 抽取只会引入误差。真正缺的是"不接受股票""偏好稳健"这类表里放不下的东西。
+        --
+        -- category 白名单；source=model_inferred 的条目**不进 prompt**
+        -- （防止一次模型推测变成永久偏见）；expires_at 支持时效。
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS user_notes (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id                 INTEGER NOT NULL DEFAULT 1,
+            category                TEXT    NOT NULL
+                                    CHECK (category IN ('preference', 'constraint', 'fact')),
+            content                 TEXT    NOT NULL,
+            source                  TEXT    NOT NULL DEFAULT 'user_stated'
+                                    CHECK (source IN ('user_stated', 'model_inferred')),
+            source_conversation_id  INTEGER,
+            status                  TEXT    NOT NULL DEFAULT 'active'
+                                    CHECK (status IN ('active', 'superseded', 'deleted')),
+            expires_at              TEXT,
+            created_at              TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at              TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_user_notes_active
+            ON user_notes (user_id, status, category);
         """
 
 

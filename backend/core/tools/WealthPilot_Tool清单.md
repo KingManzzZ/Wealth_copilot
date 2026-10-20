@@ -241,7 +241,7 @@
 
 ## 附：当前实现统计
 
-**已实现工具：23 个**（分布在 7 个 `tools_hub` 模块中；不含 RAG 的 `search_knowledge`）
+**已实现工具：25 个**（分布在 8 个 `tools_hub` 模块中；不含 RAG 的 `search_knowledge`）
 
 | 模块 | 工具数 | 工具列表 |
 |------|--------|----------|
@@ -252,6 +252,7 @@
 | `transaction_tools.py` | 5 | `record_income`, `record_expense`, `get_transactions`, `update_transaction_tool`, `delete_transaction_tool` |
 | `cashflow_tools.py` | 2 | `get_monthly_cashflow`, `calculate_savings_rate` |
 | `withdraw_tools.py` | 1 | `request_withdraw`（**只读提案**：生成撤回确认卡片，不执行删除） |
+| `memory_tools.py` | 2 | `remember_note`, `forget_note`（跨会话偏好/约束/事实；非结构化部分） |
 
 **暂未实现工具：34 个**
 

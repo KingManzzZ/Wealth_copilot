@@ -311,6 +311,10 @@ KEEP_RECENT_AFTER_COMPACT = 6
 
 ## 7. P4 · L3 轻量偏好笔记
 
+> **状态（2026-10-19）**：已实现，见 `backend/core/services/memories.py`、
+> `backend/core/agent/l3.py`、`backend/core/tools/tools_hub/memory_tools.py` 与
+> [`../../问题文档/Agent-上下文管理.md`](../../问题文档/Agent-上下文管理.md) 的 C2-8。
+
 采用 [03-L3 §8](03-L3-跨会话记忆.md) 的结论：**主体走已有结构化表，只补“非结构化偏好”**。
 
 ```python

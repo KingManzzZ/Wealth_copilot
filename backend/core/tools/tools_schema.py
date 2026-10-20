@@ -479,4 +479,62 @@ TOOLS_SCHEMA = [
             },
         },
     },
+
+    # =========================================================
+    # 9. 跨会话记忆（memory_tools.py）—— L3
+    #
+    # 只补"非结构化偏好/约束/事实"；财务数据仍在结构化表里。
+    # =========================================================
+    {
+        "type": "function",
+        "function": {
+            "name": "remember_note",
+            "description": (
+                "记住一条**跨会话**的长期偏好 / 约束 / 事实，下个会话会自动带上。\n"
+                "只在用户**明确说出**长期安排时调用，例如「以后都按稳健型推荐」"
+                "「我不接受股票类产品」「每月 10 号发工资」。\n"
+                "不要记录你的推测、一次性的临时要求、或能从资产/负债/目标表查到的结构化事实。\n"
+                "偏好发生变化时，先 forget_note 旧条目，再 remember_note 新条目。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["preference", "constraint", "fact"],
+                        "description": "偏好 / 约束 / 事实",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "一句话，保持用户原意，不要扩写、不要推测",
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "description": "可选，YYYY-MM-DD；有时效的偏好必须填（如「这个月想省点钱」）",
+                    },
+                },
+                "required": ["category", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "forget_note",
+            "description": (
+                "忘记一条跨会话记忆。用户说「别记这个」「那条不对」「改主意了」时调用；"
+                "偏好变化时也应先删旧条目。id 可从长期记忆列表的 #编号 拿到。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note_id": {
+                        "type": "number",
+                        "description": "记忆条目 id（长期记忆列表里的 #编号）",
+                    }
+                },
+                "required": ["note_id"],
+            },
+        },
+    },
 ]
