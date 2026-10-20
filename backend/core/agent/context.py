@@ -29,6 +29,7 @@ JetBrains 的实测（arXiv 2508.21433，SWE-bench Verified，5 种模型配置�
 import os
 
 from ..services.replay import expand_to_model_messages
+from . import l1
 
 # ---------------------------------------------------------------------------
 # 配置
@@ -242,14 +243,17 @@ def prepare_history(rows, budget: int = None, state: dict = None) -> tuple:
 
     messages, compacted = _compose_messages(rows, state)
     masked_messages, masked_count = mask_old_tool_results(messages)
-    pre_tokens = estimate_tokens(masked_messages)
+    # L1 截断：最近几条工具输出不掩码，但可能单条就很大（如 include_parent）
+    truncated_messages, truncated_count = l1.truncate_tool_messages(masked_messages)
+    pre_tokens = estimate_tokens(truncated_messages)
     trimmed, dropped = trim_to_budget(
-        masked_messages, budget, keep_first=2 if compacted else 1
+        truncated_messages, budget, keep_first=2 if compacted else 1
     )
 
     info = {
         "rows": len(rows),
         "masked": masked_count,
+        "truncated_tool_results": truncated_count,
         "dropped_units": dropped,
         "pre_tokens": pre_tokens,
         "tokens": estimate_tokens(trimmed),

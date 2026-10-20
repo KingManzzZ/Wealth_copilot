@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 
 from ..tools import tools_route, tools_schema
+from . import l1
 from .cancel import TurnCancel, TurnCancelled
 from .prompt import SYSTEM_PROMPT
 
@@ -29,18 +30,24 @@ _WEEKDAYS = "一二三四五六日"
 
 
 def _system_content() -> str:
-    """系统提示 + 当前日期锚点。
+    """**稳定前缀**：只返回 SYSTEM_PROMPT，不含日期/用户名。
 
-    模型自己不知道"今天"是哪天，而"本月""昨天"这类相对时间必须落到正确的
-    月份才能记账（``occurred_at`` 决定流水归哪个月，进而决定月结余算哪个月）。
-    不注入日期时，模型只能猜一个日期，账就会记到错误的月份上。
+    提示词缓存按前缀命中：system 一变，后面的 tools + history 全部失效。
+    日期改由 ``_user_content`` 注入到最末的 user 消息里（永远不在缓存前缀中）。
+    """
+    return SYSTEM_PROMPT
+
+
+def _user_content(message: str) -> str:
+    """把"当前日期"注入到**本次用户输入**里。
+
+    模型自己不知道"今天"是哪天，而"本月""昨天"必须落到正确月份才能记账。
+    放到 user 消息而不是 system：前缀（system + tools）保持稳定。
     """
     now = datetime.now()
     return (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"当前日期：{now.year} 年 {now.month} 月 {now.day} 日"
-        f"（星期{_WEEKDAYS[now.weekday()]}）。"
-        "「今天」「本月」「上个月」等相对时间一律以此为准。"
+        f"[当前日期：{now.year}-{now.month:02d}-{now.day:02d}"
+        f"（星期{_WEEKDAYS[now.weekday()]}）]\n{message}"
     )
 
 
@@ -70,7 +77,7 @@ def chat_stream(message, history=None, cancel: TurnCancel | None = None):
 
     if history:
         messages.extend(history)
-    messages.append({"role":"user","content":message})
+    messages.append({"role":"user","content":_user_content(message)})
 
     #连续"未知工具"计数（跨轮次累计，命中 UNKNOWN_TOOL_LIMIT 即提前收敛）
     unknown_streak = 0
@@ -84,23 +91,47 @@ def chat_stream(message, history=None, cancel: TurnCancel | None = None):
         #向前端传递当前轮次情况
         yield {"type": "round", "round": round_num}
 
+        # 只在第一轮打印一次请求规模：system / tools 是固定成本，历史随轮次变
+        if round_num == 1:
+            stats = l1.request_stats(messages, tools_schema.TOOLS_SCHEMA)
+            print(f"[l1] 请求规模：{l1.format_stats(stats)}")
+
         # 用于拼接流式信息，组成完整信息维护messages
         content_parts = []
         tool_calls = {}
 
-        stream = client.chat.completions.create(
+        create_kwargs = dict(
             model="deepseek-flash",
             messages=messages,
             tools=tools_schema.TOOLS_SCHEMA,
             stream=True,
             reasoning_effort="high",
-            extra_body={"thinking": {"type": "enabled"}}
+            extra_body={"thinking": {"type": "enabled"}},
         )
+        if l1.INCLUDE_USAGE:
+            create_kwargs["stream_options"] = {"include_usage": True}
+
+        try:
+            stream = client.chat.completions.create(**create_kwargs)
+        except Exception as exc:  # noqa: BLE001
+            if "stream_options" not in create_kwargs:
+                raise
+            # 中转层不一定支持 stream_options；只回退这一次，不吞其他错误
+            print(
+                f"[l1] ⚠️ 中转不支持 stream_options，已回退："
+                f"{type(exc).__name__}: {exc}"
+            )
+            create_kwargs.pop("stream_options")
+            stream = client.chat.completions.create(**create_kwargs)
 
         #流式响应反馈处理
         try:
             for chunk in stream:
                 _check(cancel)
+                # usage 通常在最后一个 chunk（choices 为空），必须在 continue 之前取
+                usage = l1.usage_from_chunk(chunk)
+                if usage:
+                    l1.log_usage(usage, f"round={round_num}")
                 if not chunk.choices:
                     continue
                 delta=chunk.choices[0].delta
@@ -195,9 +226,15 @@ def chat_stream(message, history=None, cancel: TurnCancel | None = None):
             elif status == "success":
                 unknown_streak = 0
 
+            tool_content, tool_truncated = l1.truncate_tool_content(origin_result)
+            if tool_truncated:
+                print(
+                    f"[l1] 工具 {tool['name']} 结果 {len(origin_result)} 字符，"
+                    f"已截断到 {len(tool_content)}"
+                )
             messages.append({
                 "role": "tool",
-                "content": origin_result,
+                "content": tool_content,
                 "tool_call_id": tool["id"]
             })
 

@@ -7,6 +7,7 @@
 > - `backend/core/services/replay.py`（历史回放/展开）
 > - `backend/core/agent/context.py`（预算、观察掩码、滑动窗口）
 > - `backend/core/agent/compaction.py`（长会话压缩：摘要 + 锚点 + 保留最近 N 轮）
+> - `backend/core/agent/l1.py`（单次调用：稳定前缀、工具结果截断、请求度量）
 > - `frontend/src/hooks/useChat.ts`、`frontend/src/lib/api.ts`（发送与写权）
 >
 > **与另两条问题线的关系**：
@@ -52,8 +53,9 @@
 | C2-4 | 同会话并发写入会让 `tool_calls` 与 `tool` 错配 | 🔵 低 | ⚠️ 部分修复（进程内锁；多 worker 不覆盖） | `chat.py` `_acquire` |
 | C2-5 | 写权移交期前后端双写，消息重复 | 🔴 高 | ✅ 已修复（tsc 通过） | `useChat.ts` `finally` |
 | C2-6 | 长会话没有压缩，token 随轮次单调上升 | 🟡 中 | ✅ 已实现（**8 条压缩用例实测通过**） | `compaction.py` |
+| C2-7 | L1 单次调用：system 带日期、工具结果无上限、无请求度量 | 🟡 中 | ✅ 已实现（**8 条 L1 用例实测通过**） | `l1.py` / `agent.py` |
 
-**合计 8 条**：5 条已修复/已实现，1 条已绕开，2 条部分修复。
+**合计 9 条**：6 条已修复/已实现，1 条已绕开，2 条部分修复。
 
 > **状态口径**（沿用本项目 README 的约定）：
 > "✅ 已修复（有实测证据）"指**跑过**；
@@ -72,6 +74,9 @@
 | 谁写 `messages` 表 | 前端（整轮结束一次写） | **后端**（用户消息请求开始写、助手消息流结束写） |
 | 断流时 | 用户输入 + 半截助手一起丢；状态坏在库里 | 用户输入已落库；助手按 `interrupted` 收敛 |
 | 请求前裁剪 | 无 | 观察掩码（保留最近 8 条工具输出）+ 预算裁剪（8000 单位）+ 长会话压缩（75% 触发，保留最近 6 轮） |
+| 单条工具结果 | 原样塞入 | 超过 4000 字符截断（保留头尾），回放历史时同样截断 |
+| system 里的动态内容 | 末尾拼"当前日期"→ 缓存每天失效 | 日期移到当前 user 消息；system + tools 会话内稳定 |
+| 请求规模观测 | 无 | 每轮首次请求打印 system/tools/历史/工具往返分段 |
 | 并发 | 无保护 | 同会话进程内互斥，第二个请求 409 |
 
 ---
@@ -688,6 +693,113 @@ python tests\rag\run_tests.py --only test_context.py
 
 ---
 
+## C2-7 · L1 单次调用：没有"稳定前缀"和"工具结果上限"
+
+| 元信息 | 内容 |
+| :--- | :--- |
+| **发现时间** | 2026-10-19 |
+| **发现方式** | 对照 `Investigation/上下文机制/01-L1-单次调用上下文.md` 做 token 审计 |
+| **严重度** | 🟡 中（缓存每天失效一次；一次大工具返回就能吃掉小半个窗口） |
+| **状态** | ✅ 已实现（**8 条 L1 用例实测通过**） |
+| **所属环节** | 单次请求组装 |
+
+### 🔍 现象（审计数字）
+
+同一轮请求的固定成本：
+
+| 段 | 规模 | 说明 |
+| :--- | :--- | :--- |
+| system prompt | 约 **3170** 字符 | 模块常量，但**末尾拼了"当前日期"** |
+| tools schema（24 个） | 约 **9231** 字符 | 每轮重复支付 |
+| 历史 + 工具往返 | 随会话增长 | 本轮工具结果原样塞入，无上限 |
+
+三个具体问题：
+
+1. **system 里带日期**：提示词缓存按前缀命中，system 一变，后面的 tools + history
+   全部失效——等于**每天**全量 miss 一次（不是每轮，但足以吃掉大部分收益）；
+2. **工具结果无上限**：`search_knowledge(include_parent=True)` 一次可能上千 token，
+   原样进 `messages` 后，这一轮后续全在挤窗口；
+3. **没有请求级度量**：没人知道"这一轮到底花了多少、工具占了多少、缓存命中没有"。
+
+### 🎯 根因
+
+**把 L1 当成"把 messages 拼起来"，没有把它当预算分配。**
+L2 的裁剪解决"历史太长"，但解决不了"这次请求的 system/tools/单条工具结果本身就很胖"。
+
+### ✅ 解决方案
+
+新增 `backend/core/agent/l1.py`，改三处：
+
+**① 稳定前缀（缓存友好）**
+
+```
+system  = SYSTEM_PROMPT                # 纯常量，不含日期/用户名
+user    = "[当前日期：2026-10-19（周日）]\n" + 用户原话
+```
+
+- 日期从 system 末尾移到**当前 user 消息开头**：它永远在最末，不在缓存前缀里；
+- system + tools 在整个会话内**字节级稳定**，前缀缓存才有机会命中；
+- 同时修正了 prompt 里"见系统消息末尾"的过期说法。
+
+**② 工具结果截断（L1 与 L2 互补）**
+
+| | 时机 | 做法 |
+| :--- | :--- | :--- |
+| **L1 截断** | 刚拿到工具结果时 + 回放历史时 | 单条超过 **4000** 字符 → 保留头 70% + 尾 30%，中间插入"已截断"标记 |
+| **L2 掩码** | 结果变成历史之后 | 最近 8 条保留，更早的换成占位符 |
+
+两处都改：`agent.py` 回填本轮 tool 消息时截断；`context.prepare_history` 对回放出的
+最近 tool 消息也截断（否则历史里的大结果每次都会重新进上下文）。
+
+**③ 度量**
+
+- 每轮第一次请求打印一行：
+  `[l1] 请求规模：system 3170 + tools 9231（24 个）+ 历史 24 + 工具往返 0 = 12425 字符`
+- 可选 usage：`L1_INCLUDE_USAGE=1` 时请求 `stream_options.include_usage`，日志输出
+  `prompt / completion / cached / 命中率`。**默认关闭**：中转层不一定支持，开了可能 400；
+  代码里做了"失败一次自动回退"。
+
+### ⚙️ 配置
+
+| 环境变量 | 默认 | 作用 |
+| :--- | :--- | :--- |
+| `L1_TOOL_RESULT_MAX_CHARS` | `4000` | 单条工具结果上限（<=0 关闭截断） |
+| `L1_INCLUDE_USAGE` | `0` | 是否请求 usage（验证中转支持后再开） |
+
+### ✔️ 验证
+
+```powershell
+cd backend
+python tests\rag\run_tests.py --only test_l1.py test_agent_events.py test_context.py
+# → 结果：通过 50 / 失败 0 / 错误 0 / 跳过 1
+```
+
+8 条 L1 用例：
+
+- `system_prompt_is_stable` —— system 是常量、不含日期、多次调用一致；
+- `user_message_carries_date` —— 日期只在当前 user 消息里；
+- `short_tool_content_untouched` / `long_tool_content_keeps_head_and_tail` —— 截断边界；
+- `truncate_only_touches_tool_messages` —— 不动 assistant / tool_call_id；
+- `prepare_history_truncates_recent_tools` —— 回放路径也截断；
+- `request_stats_segments` / `usage_parsing` —— 度量口径。
+
+### ⚠️ 已知取舍
+
+| 取舍 | 说明 |
+| :--- | :--- |
+| **日期在 user 消息里** | 模型可能把日期当成用户原话的一部分；影响可接受，换来稳定前缀 |
+| **截断有损** | 被截掉的中间段模型看不到；但它知道"被截断"，可以重新调工具 |
+| **usage 默认关闭** | 中转是否透传 `stream_options` / 缓存字段无法离线验证，需真实链路确认 |
+| **tools 仍是全量 24 个** | 9231 字符固定成本；24 个仍在"全量枚举"舒适区，暂不引入 tool RAG |
+| **`prompt_cache_key` 未设置** | 中转是否支持未知；先靠"顺序稳定 + 去动态内容"拿到自动前缀缓存 |
+
+### 💡 学习要点
+
+**L1 的优化顺序是：先让前缀稳定（几乎零成本），再给单条结果设上限，最后才谈度量。**
+顺序反过来（先上缓存字段、先上工具检索）通常是在为一个还没稳定的前缀做昂贵优化。
+
+---
+
 ## 通用经验
 
 | # | 原则 | 对应问题 |
@@ -701,6 +813,7 @@ python tests\rag\run_tests.py --only test_context.py
 | 7 | **转移写权是替换而非加法，旧写方必须显式下线** | C2-5 |
 | 8 | **估算不完美不是不做的理由**——`usage` 请求后才有，裁剪必须在请求前决定 | C2-3 |
 | 9 | **压缩要留三样东西：锚点、最近 N 轮、结构化结论**；压缩本身也要吃 token | C2-6 |
+| 10 | **L1 先让前缀稳定，再给单条结果设上限，最后才谈度量** | C2-7 |
 
 > 第 8 条值得单独强调：很多团队卡在"token 估算不准所以不敢裁剪"，
 > 但裁剪的价值来自数量级差异（工具输出占 84%），估算误差 ±30% 根本不影响结论。
@@ -723,8 +836,8 @@ python tests\rag\run_tests.py --only test_context.py
 
 ```powershell
 cd backend
-python tests\rag\run_tests.py --only test_context.py test_api_e2e.py test_agent_events.py test_tool_contract.py
-# → 结果：通过 69 / 失败 0 / 错误 0 / 跳过 11
+python tests\rag\run_tests.py --only test_l1.py test_context.py test_api_e2e.py test_agent_events.py test_tool_contract.py
+# → 结果：通过 77 / 失败 0 / 错误 0 / 跳过 11
 ```
 
 **全量套件**仍会因既有的环境问题报错（与本次改动无关）：

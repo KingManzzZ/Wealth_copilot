@@ -308,7 +308,16 @@ def check_prepare_history_reports_metrics():
     rows = _long_history(12)
     history, info = context.prepare_history(rows, budget=3000)
     assert_pairing(history)
-    for key in ("rows", "masked", "dropped_units", "pre_tokens", "tokens", "budget", "compacted"):
+    for key in (
+        "rows",
+        "masked",
+        "truncated_tool_results",
+        "dropped_units",
+        "pre_tokens",
+        "tokens",
+        "budget",
+        "compacted",
+    ):
         in_(key, info, f"度量里应含 {key}")
     eq(info["budget"], 3000)
     true(info["tokens"] <= 3000, f"裁剪后应落在预算内（实际 {info['tokens']}）")

@@ -190,7 +190,15 @@ def check_history_prepended():
     msgs = fake.requests[0]["messages"]
     eq(msgs[0]["role"], "system")
     eq(msgs[1]["content"], "之前的问题", "history 应被插入到 system 之后")
-    eq(msgs[-1]["content"], "新的问题", "当前输入应在最后")
+    true(
+        msgs[-1]["content"].endswith("新的问题"),
+        "当前输入应在最后（前面允许带日期前缀）",
+    )
+    in_("当前日期", msgs[-1]["content"], "日期应注入当前 user 消息")
+    true(
+        "当前日期：" not in msgs[0]["content"],
+        "system prompt 必须是稳定前缀，不能带日期",
+    )
 
 
 def check_max_rounds_guard():
