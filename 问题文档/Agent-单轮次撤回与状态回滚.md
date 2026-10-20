@@ -75,7 +75,10 @@ POST /api/conversations/{id}/withdraw  { turn_id, truncate? }
    只要有一条不符（说明之后被人改过），**整体放弃**并返回 409 + 冲突明细。
 5. **还原**（逆序，后写的先撤）：插入的删掉、更新的写回 `before`、删除的按原 id 插回去。
 6. **撤消息**：从这一轮的第一条起，全部置 `withdrawn=1`（不物理删除，保留审计）。
-7. **收尾**：受影响轮次置 `turns.status='withdrawn'`；重算会话标题（撤掉第一轮时标题回退）；
+7. **作废压缩摘要**：`conversations.summary` / `summary_until_message_id` / `summary_anchor_message_id`
+   全部清空——摘要里可能包含刚被撤回的内容，不清空会让它经由摘要重新进入模型上下文
+   （代价：下次请求可能重新压缩一次）。
+8. **收尾**：受影响轮次置 `turns.status='withdrawn'`；重算会话标题（撤掉第一轮时标题回退）；
    返回摘要。
 
 响应示例：

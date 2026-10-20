@@ -135,6 +135,10 @@ SCHEMA_SQL: str = """
             user_id     INTEGER NOT NULL DEFAULT 1,
             title       TEXT,
             summary     TEXT,
+            -- 摘要覆盖到哪条消息（含）；<= 它的消息不再逐条进入上下文
+            summary_until_message_id INTEGER,
+            -- 锚点：会话第一条用户消息，永不参与摘要（防"忘了最初要干嘛"）
+            summary_anchor_message_id INTEGER,
             status      TEXT    NOT NULL DEFAULT 'active'
                                 CHECK (status IN ('active', 'archived')),
             created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -208,6 +212,24 @@ SCHEMA_SQL: str = """
         CREATE INDEX IF NOT EXISTS ix_turn_writes_turn
             ON turn_writes (turn_id, status);
 
+        -- ===================================================================
+        -- 10. compactions：每次上下文压缩的审计记录
+        --
+        -- 为什么要单独记：摘要是有损且不确定的操作。线上"怎么突然变笨了"，
+        -- 必须能回答"第几轮压的、压了多少、前后是什么、用的哪版提示词"。
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS compactions (
+            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id          INTEGER NOT NULL,
+            covered_from_message_id  INTEGER NOT NULL,
+            covered_until_message_id INTEGER NOT NULL,
+            before_tokens            INTEGER NOT NULL,
+            after_tokens             INTEGER NOT NULL,
+            summary                  TEXT    NOT NULL,
+            prompt_version           TEXT    NOT NULL,
+            created_at               TEXT    NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS ix_messages_conversation_created
             ON messages (conversation_id, created_at);
         """
@@ -217,8 +239,26 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     """在给定连接上执行建表脚本（幂等；失败异常向上抛出），并做轻量迁移。"""
     conn.executescript(SCHEMA_SQL)
     _ensure_message_columns(conn)
+    _ensure_conversation_columns(conn)
     _drop_legacy_cashflow(conn)
     conn.commit()
+
+
+def _ensure_conversation_columns(conn: sqlite3.Connection) -> None:
+    """给旧库的 conversations 补上压缩相关列（幂等）。"""
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(conversations)")}
+    except sqlite3.OperationalError:
+        return
+
+    additions = {
+        "summary_until_message_id": "INTEGER",
+        "summary_anchor_message_id": "INTEGER",
+    }
+    for column, ddl in additions.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE conversations ADD COLUMN {column} {ddl}")
+            print(f"[schema] conversations 表已补列：{column}")
 
 
 def _ensure_message_columns(conn: sqlite3.Connection) -> None:

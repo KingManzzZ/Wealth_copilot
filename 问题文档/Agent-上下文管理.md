@@ -6,6 +6,7 @@
 > - `backend/api/routes/chat.py`（入口契约与服务端流程）
 > - `backend/core/services/replay.py`（历史回放/展开）
 > - `backend/core/agent/context.py`（预算、观察掩码、滑动窗口）
+> - `backend/core/agent/compaction.py`（长会话压缩：摘要 + 锚点 + 保留最近 N 轮）
 > - `frontend/src/hooks/useChat.ts`、`frontend/src/lib/api.ts`（发送与写权）
 >
 > **与另两条问题线的关系**：
@@ -50,8 +51,9 @@
 | C2-3 | 请求前无上下文预算，无法裁剪 | 🟡 中 | ✅ 已实现（**19 条用例实测通过**） | `context.py` |
 | C2-4 | 同会话并发写入会让 `tool_calls` 与 `tool` 错配 | 🔵 低 | ⚠️ 部分修复（进程内锁；多 worker 不覆盖） | `chat.py` `_acquire` |
 | C2-5 | 写权移交期前后端双写，消息重复 | 🔴 高 | ✅ 已修复（tsc 通过） | `useChat.ts` `finally` |
+| C2-6 | 长会话没有压缩，token 随轮次单调上升 | 🟡 中 | ✅ 已实现（**8 条压缩用例实测通过**） | `compaction.py` |
 
-**合计 7 条**：3 条已修复/已实现，1 条已绕开，2 条部分修复，1 条已实现待实测。
+**合计 8 条**：5 条已修复/已实现，1 条已绕开，2 条部分修复。
 
 > **状态口径**（沿用本项目 README 的约定）：
 > "✅ 已修复（有实测证据）"指**跑过**；
@@ -69,7 +71,7 @@
 | 缺 `result` 的调用 | 缺 `tool` 消息 → 下次续聊 400 | 服务端合成 `interrupted` 提示，会话可续 |
 | 谁写 `messages` 表 | 前端（整轮结束一次写） | **后端**（用户消息请求开始写、助手消息流结束写） |
 | 断流时 | 用户输入 + 半截助手一起丢；状态坏在库里 | 用户输入已落库；助手按 `interrupted` 收敛 |
-| 请求前裁剪 | 无 | 观察掩码（保留最近 8 条工具输出）+ 预算裁剪（8000 单位） |
+| 请求前裁剪 | 无 | 观察掩码（保留最近 8 条工具输出）+ 预算裁剪（8000 单位）+ 长会话压缩（75% 触发，保留最近 6 轮） |
 | 并发 | 无保护 | 同会话进程内互斥，第二个请求 409 |
 
 ---
@@ -584,6 +586,108 @@ node node_modules/oxlint/bin/oxlint src/hooks/useChat.ts src/lib/api.ts  # 0 err
 
 ---
 
+## C2-6 · 长会话没有压缩，token 随轮次单调上升
+
+| 元信息 | 内容 |
+| :--- | :--- |
+| **发现时间** | 2026-10-19 |
+| **发现方式** | 接入掩码/窗口后复查：窗口丢弃的轮次模型就永远看不到了 |
+| **严重度** | 🟡 中（长会话质量下降；窗口丢的是"结论"而不是"体积"） |
+| **状态** | ✅ 已实现（**8 条压缩用例实测通过**） |
+| **所属环节** | 上下文压缩 |
+
+### 🔍 现象
+
+掩码只能清掉旧工具输出，窗口只能把最旧的单元**丢掉**。一旦会话长到超预算，
+早期已经得出的结论、决策、失败路径会被静默丢弃——模型只能重新查，或者直接答偏。
+而且丢什么完全由"位置"决定，不是由"重要性"决定。
+
+### 🎯 根因
+
+**裁剪 ≠ 压缩。** 裁剪是"少给"（信息消失），压缩是"改写后仍然给"（保留结论）。
+前者在预算压力下必然丢语义，后者才能让长会话保持连续。
+
+### ✅ 解决方案
+
+新增 `backend/core/agent/compaction.py`，在**轮次边界**（`chat.py` 组装本轮历史时）
+做一次"摘要 + 保留最近 N 轮"：
+
+```
+prepare_history(rows, state)  →  info.pre_tokens
+        │
+        ├─ pre_tokens < 75% × 预算 → 不压缩，直接掩码 + 窗口
+        │
+        └─ 达到阈值 → maybe_compact():
+             ① 锚点 = 会话第一条用户消息（原文保留，**不参与摘要**）
+             ② 边界 = 倒数第 6 条用户消息（最近 6 轮保留原文）
+             ③ 范围 = 锚点之后、边界之前、且未被上次摘要覆盖
+             ④ transcript = 已有摘要 + 新增对话（工具结果截断到 400 字）
+             ⑤ 调摘要模型 → 结构化摘要（recall 优先：目标/数值/决策/未决/失败路径）
+             ⑥ 写 conversations.summary + summary_until_message_id + summary_anchor_message_id
+             ⑦ 写 compactions 审计行（前后 token、覆盖区间、prompt 版本）
+        │
+        └─ 重新 prepare_history：锚点原文 + 摘要 system + 未覆盖的最近消息
+              → 掩码 → 窗口（keep_first=2：锚点和摘要都不许裁）
+```
+
+**一次压缩的效果**（示意）：
+
+| | 消息数 | 估算规模 |
+|---|---|---|
+| 压缩前（20 轮，含工具输出） | 约 60 条 | 约 12000 |
+| 压缩后 | 锚点 1 + 摘要 1 + 最近 6 轮约 18 条 | 约 3500 |
+
+**为什么锚点独立、为什么不把最近 N 轮也摘要**：
+
+- 锚点是"原始目标与硬约束"，多层摘要后最容易漂移，必须原文保留；
+- 最近 6 轮是"当前正在做的事"，摘要会丢掉刚刚查到的细节。
+
+### ⚙️ 配置
+
+| 环境变量 | 默认 | 作用 |
+| :--- | :--- | :--- |
+| `CONTEXT_COMPACTION` | `1` | `0` 关闭压缩（回退到掩码 + 窗口） |
+| `CONTEXT_COMPACT_AT` | `0.75` | 触发阈值（预留摘要本身的 token） |
+| `CONTEXT_KEEP_RECENT_TURNS` | `6` | 压缩后保留最近多少轮原文 |
+
+失败不影响聊天：摘要模型报错/返回空时只记日志，本轮按未压缩继续。
+
+### ✔️ 验证
+
+```powershell
+cd backend
+python tests\rag\run_tests.py --only test_context.py
+# → 结果：通过 27 / 失败 0 / 错误 0 / 跳过 0
+```
+
+其中 8 条专测压缩：
+
+- `plan_scopes_old_turns` —— 划界正确（锚点之后、保留边界之前）；
+- `plan_needs_enough_turns` —— 轮数不足不压缩；
+- `transcript_includes_tool_results` —— 工具结果进摘要输入；
+- `prepare_history_injects_summary` —— 锚点 + 摘要 + 最近消息的组装顺序；
+- `maybe_compact_persists_summary_and_audit` —— 摘要/覆盖位置/锚点/审计行落库；
+- `maybe_compact_respects_threshold` —— 未过阈值不动作；
+- `maybe_compact_can_be_disabled` —— 开关生效；
+- `second_compaction_needs_new_messages` —— 没有新消息不重复压缩。
+
+### ⚠️ 已知取舍
+
+| 取舍 | 说明 |
+| :--- | :--- |
+| **增量摘要的递归漂移** | 这次是"已有摘要 + 新增对话"，不是每次从原文重算。缓解：锚点独立 + `compactions` 留档（可回溯/重算） |
+| **压缩延迟** | 首次压缩在请求前同步调用摘要模型（已丢线程池），可能多 1~3s；之后的请求不再压缩 |
+| **仍需 A/B** | 摘要有反例（C2-3 证据：Gemini thinking −22.3%），所以默认阈值 75%、保留 6 轮，且可一键关闭 |
+| **摘要质量依赖提示词** | 提示词版本记录在 `compactions.prompt_version`，改动会影响行为 |
+| **撤回与压缩的交互** | 撤回会清空会话摘要（`turn_state.withdraw` 里置 NULL）：摘要可能包含被撤内容，不清空会经由摘要"复活"；代价是下次请求可能重新压缩 |
+
+### 💡 学习要点
+
+**压缩的关键不是"压多少"，而是"留什么"：锚点、最近 N 轮、结构化结论。**
+以及一个容易被忽略的工程约束：**压缩本身也要花 token**，所以触发阈值不能设在窗口边缘。
+
+---
+
 ## 通用经验
 
 | # | 原则 | 对应问题 |
@@ -596,6 +700,7 @@ node node_modules/oxlint/bin/oxlint src/hooks/useChat.ts src/lib/api.ts  # 0 err
 | 6 | **引入共享状态必须同时引入并发约束** | C2-4 |
 | 7 | **转移写权是替换而非加法，旧写方必须显式下线** | C2-5 |
 | 8 | **估算不完美不是不做的理由**——`usage` 请求后才有，裁剪必须在请求前决定 | C2-3 |
+| 9 | **压缩要留三样东西：锚点、最近 N 轮、结构化结论**；压缩本身也要吃 token | C2-6 |
 
 > 第 8 条值得单独强调：很多团队卡在"token 估算不准所以不敢裁剪"，
 > 但裁剪的价值来自数量级差异（工具输出占 84%），估算误差 ±30% 根本不影响结论。
@@ -607,10 +712,9 @@ node node_modules/oxlint/bin/oxlint src/hooks/useChat.ts src/lib/api.ts  # 0 err
 | 项 | 说明 | 触发条件 |
 | :--- | :--- | :--- |
 | **前端 `buildHistory` 修复或删除** | C1-1 的缺陷仍在兼容路径生效 | 兼容路径下线时一起删；或单独修 |
-| **摘要（compaction）** | 只做了掩码 + 窗口。摘要要 A/B 且已有反例（C2-3 证据） | 掩码 + 窗口后 token 仍单调上升 |
+| **压缩的 A/B 评测** | C2-6 已实现，但摘要有反例（Gemini thinking −22.3%），需要真实长会话样本对比"掩码+窗口"与"+压缩" | 有 20 轮以上的真实会话样本 |
 | **`client_msg_id` 幂等** | 客户端重发会让用户消息重复入库。**刻意没加**——不在本次范围，且"声明未实现"比"不声明"更糟 | 出现真实重发场景 |
 | **多 worker 的会话锁** | 现在是进程内锁 | 部署改为多 worker |
-| **锚点显式化** | 现在靠"不丢第一个单元"实现；摘要会整体替换历史，届时必须升级为显式字段 | 引入 compaction 时 |
 | **兼容路径下线** | 无 `conversation_id` 的 `history` 分支仍在 | 统计命中量降到可忽略 |
 
 ---
@@ -620,13 +724,10 @@ node node_modules/oxlint/bin/oxlint src/hooks/useChat.ts src/lib/api.ts  # 0 err
 ```powershell
 cd backend
 python tests\rag\run_tests.py --only test_context.py test_api_e2e.py test_agent_events.py test_tool_contract.py
-# → 结果：通过 59 / 失败 0 / 错误 0 / 跳过 13
-
-python tests\rag\run_tests.py
-# → 结果：通过 119 / 失败 3 / 错误 9 / 跳过 15
+# → 结果：通过 69 / 失败 0 / 错误 0 / 跳过 11
 ```
 
-**全量套件的 12 项失败仍是既有的环境问题**，与本次改动无关：
+**全量套件**仍会因既有的环境问题报错（与本次改动无关）：
 `yaml` 未安装（`ModuleNotFoundError: No module named 'yaml'`）+ 临时目录不可写
 （`PermissionError: ...\Temp\dsh-...\config.yaml`）。集中在 RAG 的
 `test_evidence` / `test_engine` / `test_calibration_eval` 三个文件。

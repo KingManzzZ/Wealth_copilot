@@ -258,6 +258,10 @@ POST /api/chat
 
 ## 6. P3 · Compaction（**必须 A/B 后才上**）
 
+> **状态（2026-10-19）**：已实现，见 `backend/core/agent/compaction.py` 与
+> [`../../问题文档/Agent-上下文管理.md`](../../问题文档/Agent-上下文管理.md) 的 C2-6。
+> A/B 评测仍是待办（见该文「未做与后续」）。
+
 只有在 P1+P2 之后 token 仍在单调上升才做。
 
 ### 6.1 触发条件

@@ -499,8 +499,17 @@ def withdraw(conversation_id: int, turn_id: str, truncate: bool = True) -> dict:
             (conversation_id,),
         ).fetchone()
         title = (first["content"].strip()[:20] if first else "") or None
+        # 撤回必须同时作废压缩摘要：摘要里可能就包含刚被撤回的内容，
+        # 留着它会让"已撤回的轮次"通过摘要重新进入模型上下文。
         conn.execute(
-            "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+            """
+            UPDATE conversations
+            SET title = ?, updated_at = ?,
+                summary = NULL,
+                summary_until_message_id = NULL,
+                summary_anchor_message_id = NULL
+            WHERE id = ?
+            """,
             (title, now, conversation_id),
         )
 

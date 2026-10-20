@@ -5,7 +5,9 @@
 - 会话行惰性创建（用户发出首条消息时才建，空会话不落库）
 - 消息按前端 UI 结构嵌套存储：assistant 行 tool_calls 列存完整 JSON 数组
   （含 id / name / arguments / result / status），还原时 1:1 映射回 ChatMessage
-- summary / status 字段现阶段预留（删除为硬删 + ON DELETE CASCADE），不做归档/摘要
+- summary / status 字段：status 预留（删除为硬删 + ON DELETE CASCADE）；
+  summary 及两个压缩位置字段由 ``core/agent/compaction.py`` 写入（长会话压缩），
+  本模块只负责存储与读取
 """
 
 import json

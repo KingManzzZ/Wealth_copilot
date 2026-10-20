@@ -163,6 +163,37 @@ def check_single_turn_withdraw_keeps_later():
         )
 
 
+def check_withdraw_clears_compaction_summary():
+    """撤回必须作废压缩摘要，否则被撤内容会经由摘要重新进入上下文。"""
+    from core.agent import compaction
+
+    with _support.temp_database():
+        cid = conv.create_conversation()["id"]
+        _support.run_turn(cid, "s1", "会被撤回的一轮", assistant_text="回答")
+
+        conn = get_connection()
+        conn.execute(
+            """
+            UPDATE conversations
+            SET summary = '旧摘要：记过一笔账',
+                summary_until_message_id = 99,
+                summary_anchor_message_id = 1
+            WHERE id = ?
+            """,
+            (cid,),
+        )
+        conn.commit()
+        conn.close()
+        eq(compaction.load_state(cid)["summary"], "旧摘要：记过一笔账")
+
+        turn_state.withdraw(cid, "s1", truncate=False)
+
+        state = compaction.load_state(cid)
+        eq(state["summary"], None, "撤回后摘要必须清空")
+        eq(state["until"], None, "覆盖位置必须清空")
+        eq(state["anchor"], None, "锚点必须清空")
+
+
 def check_repeat_withdraw_is_not_found():
     with _support.temp_database():
         cid = conv.create_conversation()["id"]

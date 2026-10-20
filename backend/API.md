@@ -203,7 +203,10 @@ GPT 式多会话：会话行**惰性创建**（发出首条消息时才建，空
 | `id` | number | 自增 id |
 | `title` | string \| null | 会话标题；为空时由首条 user 消息截取前 20 字自动补 |
 | `updated_at` | string | 最近一次追加消息时间（列表排序依据） |
-| `summary` / `status` | — | 预留字段（归档/摘要），现阶段不启用 |
+| `summary` | string \| null | 长会话压缩后的结构化摘要（见 `core/agent/compaction.py`） |
+| `summary_until_message_id` | number \| null | 摘要覆盖到哪条消息（含）；`id <= 它的消息不再逐条发给模型` |
+| `summary_anchor_message_id` | number \| null | 锚点（首条用户消息 id），永不参与摘要 |
+| `status` | string | `active` / `archived` |
 
 - GET `/api/conversations` → `[{id, title, updated_at}, ...]`
 - POST `/api/conversations` body `{title?}` → `{id, title, updated_at}`
@@ -224,7 +227,7 @@ GPT 式多会话：会话行**惰性创建**（发出首条消息时才建，空
 - GET `/api/conversations/{id}/messages` → `[{id, role, content, tool_calls?, turn_id?, interrupted, stop_reason?}, ...]`；会话不存在 404
 - POST `/api/conversations/{id}/messages` body `{messages: [{role, content, tool_calls?, turn_id?, interrupted?, stop_reason?}]}` → `{conversation_id, title, saved}`；每轮对话一次批量写入
 - DELETE `/api/conversations/{id}` → 硬删，messages 由 `ON DELETE CASCADE` 级联清除
-- POST `/api/conversations/{id}/withdraw` body `{turn_id}` → **撤回一轮及其之后的所有轮次**：消息软删 + 这些轮次写过的数据还原；返回 `{turn_id, withdrawn_messages, turns_withdrawn, user_text, rollback}`。数据被改过则 409
+- POST `/api/conversations/{id}/withdraw` body `{turn_id, truncate?}` → **撤回一轮及其之后的所有轮次**（`truncate=false` 时只撤这一轮）：消息软删 + 这些轮次写过的数据还原，并清空会话摘要；返回 `{turn_id, withdrawn_messages, turns_withdrawn, user_text, rollback}`。数据被改过则 409
 
 ## 3. 其他接口
 
@@ -245,8 +248,11 @@ v0.4 起按关系建模拆分，每张表都带 `user_id` 列（INTEGER NOT NULL
 | `debts` | 债务明细，多行 | id, user_id, name, remaining, monthly_payment |
 | `goals` | 财富目标，多行 | id, user_id, goal_id, name, target, current, deadline, priority |
 | `transactions` | 交易流水明细（**收支唯一数据源**） | id, user_id, transaction_type, amount, category, source, occurred_at, note |
-| `conversations` | 对话会话（v0.6 启用） | id, user_id, title, summary, status, created_at, updated_at |
-| `messages` | 会话消息（v0.6 启用） | id, conversation_id (CASCADE), role, content, tool_calls, tool_name, interrupted, stop_reason, created_at |
+| `conversations` | 对话会话（v0.6 启用） | id, user_id, title, summary, summary_until_message_id, summary_anchor_message_id, status, created_at, updated_at |
+| `messages` | 会话消息（v0.6 启用） | id, conversation_id (CASCADE), role, content, tool_calls, tool_name, turn_id, interrupted, stop_reason, withdrawn, withdrawn_at, created_at |
+| `turns` | 一轮生成的生命周期（撤回用） | turn_id, conversation_id, status, created_at, finished_at |
+| `turn_writes` | 一轮写入的差异日志（撤回时还原） | id, turn_id, conversation_id, table_name, pk_json, op, before_json, after_json, status |
+| `compactions` | 上下文压缩审计 | id, conversation_id, covered_from/until_message_id, before/after_tokens, summary, prompt_version, created_at |
 
 UNIQUE 约束：
 - `basic_info`：`id`（单行模式固定为 OWNER_ID）
@@ -254,6 +260,8 @@ UNIQUE 约束：
 - `goals`：`(user_id, goal_id)`
 
 建表脚本见 `core/database/schema.py`（连接管理见 `core/database/connection.py`），各表读写逻辑在 `core/services/{basic_info,assets,debts,goals,cashflow,transactions}.py`。共用工具在 `core/services/_common.py`。
+
+**上下文压缩**：`core/agent/compaction.py` 在轮次边界检查规模，超过 `CONTEXT_COMPACT_AT`（默认 75%）时把"锚点之后、最近 6 轮之前"的轮次摘要进 `conversations.summary`，并写 `compactions` 审计；`context.prepare_history(state=...)` 只发锚点 + 摘要 + 最近消息。关闭：`CONTEXT_COMPACTION=0`。
 
 ## 5. 变更记录
 

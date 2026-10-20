@@ -10,8 +10,9 @@ JetBrains 的实测（arXiv 2508.21433，SWE-bench Verified，5 种模型配置�
 而 LLM 摘要有反例：Gemini 2.5 Flash（thinking）上，摘要把 solve rate 从
 40.4% 打到 **31.4%（−22.3%）**。
 
-所以顺序是：**掩码 → 滑动窗口 → 最后才考虑摘要**。本模块只做前两步，
-摘要（compaction）留到确认掩码不够用时再上。
+所以顺序是：**掩码 → 滑动窗口 → 最后才摘要**。本模块做前两步；
+第三步（compaction）在 ``core/agent/compaction.py``，由 ``prepare_history(state=...)``
+注入摘要，两者配合使用。
 
 ## 两个硬约束
 
@@ -58,6 +59,9 @@ KEEP_RECENT_TOOL_RESULTS = _env_int("KEEP_RECENT_TOOL_RESULTS", 8)
 #: 掩码后写回的内容。要**可读且可操作**——告诉模型"这里原本有内容、能重新取"，
 #: 而不是留空字符串（那会让模型以为工具什么都没返回）。
 MASKED_PLACEHOLDER = "[较早的工具输出已省略；如需重新获取，请再次调用该工具]"
+
+#: 压缩后注入的 system 消息前缀（compaction.py 复用）。
+SUMMARY_PREFIX = "【早前对话摘要（已压缩，原文不再逐条发送）】\n"
 
 
 # ---------------------------------------------------------------------------
@@ -163,8 +167,8 @@ def trim_to_budget(messages, budget: int, keep_first: int = 1) -> tuple:
     **保护会话开头的用户原始目标**（"5 年内攒够 50 万""不接受股票"）。
     丢了它，模型会给出方向错误的建议，而这正是"聊着聊着忘了最初要干嘛"的技术根因。
 
-    > 等到引入 compaction（摘要）时，这个"锚点"需要升级成显式字段，
-    > 因为摘要会整体替换历史，光靠"不丢第一个单元"守不住。
+    > 有压缩摘要时，调用方传 ``keep_first=2``：锚点 + 摘要两条都要保住，
+    > 否则"摘要还在、锚点被裁"等于把原始目标弄丢了。
     """
     units = _group_units(messages)
 
@@ -188,32 +192,68 @@ def trim_to_budget(messages, budget: int, keep_first: int = 1) -> tuple:
 # ---------------------------------------------------------------------------
 
 
-def prepare_history(rows, budget: int = None) -> tuple:
+def _compose_messages(rows, state) -> tuple:
+    """按压缩状态组装消息：锚点原文 + 摘要 + 未被覆盖的最近消息。"""
+    if not state or not state.get("summary") or state.get("until") is None:
+        return expand_to_model_messages(rows), False
+
+    anchor = state.get("anchor")
+    until = state["until"]
+    kept = [
+        row
+        for row in rows
+        if (anchor is not None and row["id"] <= anchor) or row["id"] > until
+    ]
+    anchor_rows = [
+        row for row in kept if anchor is not None and row["id"] <= anchor
+    ]
+    recent_rows = [row for row in kept if row["id"] > until]
+
+    messages = expand_to_model_messages(anchor_rows)
+    messages.append(
+        {"role": "system", "content": SUMMARY_PREFIX + str(state["summary"])}
+    )
+    messages.extend(expand_to_model_messages(recent_rows))
+    return messages, True
+
+
+def prepare_history(rows, budget: int = None, state: dict = None) -> tuple:
     """把存储行变成"可发给模型的 history"，并返回度量信息。
 
     **``rows`` 不得包含本轮的用户消息**——``chat_stream`` 会自己追加。
     调用方应先读库、再调本函数、最后才落库本轮用户消息（顺序见 ``api/routes/chat.py``）。
+
+    ``state`` 是压缩状态（``compaction.load_state`` 的返回）：
+    - ``summary`` / ``until`` / ``anchor`` 齐全时，只发"锚点 + 摘要 + 最近消息"，
+      并把 ``keep_first`` 提到 2，确保锚点与摘要都不会被窗口裁掉。
 
     返回 ``(history, info)``，``info`` 供日志观测：
 
     - ``messages``：原始行数
     - ``masked``：被掩码的工具输出条数
     - ``dropped_units``：因超预算被丢弃的单元数
+    - ``pre_tokens``：掩码后、裁剪前的规模（压缩触发判断用它）
     - ``tokens``：裁剪后的估算规模
     - ``budget``：本次生效的预算
+    - ``compacted``：是否有摘要参与组装
     """
     if budget is None:
         budget = CONTEXT_BUDGET_TOKENS
 
-    messages = expand_to_model_messages(rows)
+    messages, compacted = _compose_messages(rows, state)
     masked_messages, masked_count = mask_old_tool_results(messages)
-    trimmed, dropped = trim_to_budget(masked_messages, budget, keep_first=1)
+    pre_tokens = estimate_tokens(masked_messages)
+    trimmed, dropped = trim_to_budget(
+        masked_messages, budget, keep_first=2 if compacted else 1
+    )
 
     info = {
         "rows": len(rows),
         "masked": masked_count,
         "dropped_units": dropped,
+        "pre_tokens": pre_tokens,
         "tokens": estimate_tokens(trimmed),
         "budget": budget,
+        "compacted": compacted,
     }
     return trimmed, info

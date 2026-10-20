@@ -15,15 +15,21 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import shutil
+import uuid
+from pathlib import Path
 
 # ⚠️ 必须最先导入：``_support`` 会在 import 时把 ``backend/`` 插入 sys.path，
 # 否则下面 ``from core...`` 会 ImportError（runner 的 sys.path[0] 是 tests/rag）。
 import _support  # noqa: F401
 from run_tests import eq, in_, true
 
-from core.agent import context
-from core.services import replay
+from core.agent import compaction, context
+from core.database import get_connection
+from core.services import conversations, replay
 
 
 # ======================================================================
@@ -302,7 +308,7 @@ def check_prepare_history_reports_metrics():
     rows = _long_history(12)
     history, info = context.prepare_history(rows, budget=3000)
     assert_pairing(history)
-    for key in ("rows", "masked", "dropped_units", "tokens", "budget"):
+    for key in ("rows", "masked", "dropped_units", "pre_tokens", "tokens", "budget", "compacted"):
         in_(key, info, f"度量里应含 {key}")
     eq(info["budget"], 3000)
     true(info["tokens"] <= 3000, f"裁剪后应落在预算内（实际 {info['tokens']}）")
@@ -330,3 +336,196 @@ def check_masked_placeholder_is_actionable():
     """占位符不能是空串——模型会误以为工具什么都没返回。"""
     true(bool(context.MASKED_PLACEHOLDER.strip()), "占位符不能为空")
     in_("省略", context.MASKED_PLACEHOLDER, "占位符应说明输出被省略")
+
+
+# ======================================================================
+# 压缩（compaction）
+# ======================================================================
+
+
+def _turns_rows(turns: int) -> list:
+    """纯内存的 10 轮消息行（带 id），用于测划界与组装。"""
+    rows = []
+    next_id = 1
+    for i in range(turns):
+        rows.append({"id": next_id, "role": "user", "content": f"目标{i}"})
+        next_id += 1
+        rows.append({"id": next_id, "role": "assistant", "content": f"回答{i}"})
+        next_id += 1
+    return rows
+
+
+def check_plan_scopes_old_turns():
+    """划界：锚点之后、最近 6 轮之前的消息进入压缩范围。"""
+    rows = _turns_rows(10)
+    p = compaction.plan(rows, {"summary": None, "until": None, "anchor": None}, keep_recent=6)
+    true(p is not None, "10 轮应可压缩")
+    eq(p["anchor"], rows[0]["id"], "锚点应是第一条用户消息")
+    eq(p["keep_from"], rows[8]["id"], "保留边界应是倒数第 6 条用户消息")
+    # 锚点只保留第一条用户消息；它的助手回答之后才进入压缩范围
+    eq(len(p["scope"]), 7, "应覆盖第 0 轮的助手回答到第 3 轮（7 条消息）")
+    eq(
+        [r["role"] for r in p["scope"]],
+        ["assistant", "user", "assistant", "user", "assistant", "user", "assistant"],
+    )
+
+
+def check_plan_needs_enough_turns():
+    """轮数不足 keep_recent 时不压缩——否则会把最近几轮也摘要掉。"""
+    rows = _turns_rows(5)
+    eq(compaction.plan(rows, {"summary": None, "until": None, "anchor": None}, keep_recent=6), None)
+
+
+def check_transcript_includes_tool_results():
+    """工具结果必须进 transcript（否则摘要会丢"查到了什么"）。"""
+    scope = [
+        {"id": 2, "role": "assistant", "content": "我查一下",
+         "tool_calls": [{"id": "c1", "name": "get_assets", "arguments": {}, "result": {"net": 1}}]},
+    ]
+    text = compaction.build_transcript(scope)
+    in_("工具 get_assets", text, "应包含工具名")
+    in_("net", text, "应包含工具结果")
+
+
+def check_prepare_history_injects_summary():
+    """有摘要时：锚点原文 + 摘要 system + 未被覆盖的最近消息。"""
+    rows = _turns_rows(8)
+    state = {
+        "summary": "用户目标：5 年攒 50 万。",
+        "until": rows[7]["id"],  # 覆盖到第 3 轮
+        "anchor": rows[0]["id"],
+    }
+    history, info = context.prepare_history(rows, budget=8000, state=state)
+    true(info["compacted"], "应标记 compacted")
+    eq(history[0]["content"], "目标0", "锚点必须原文保留")
+    eq(history[1]["role"], "system", "摘要应紧跟在锚点后")
+    in_("50 万", history[1]["content"], "摘要内容应注入")
+    true(all("回答1" not in (m.get("content") or "") for m in history), "被覆盖的消息不应再出现")
+    true(any("回答7" in (m.get("content") or "") for m in history), "未覆盖的最近消息应保留")
+    assert_pairing(history)
+
+
+@contextlib.contextmanager
+def _temp_db():
+    """一次性数据库（不碰 backend/db/data.db）。
+
+    默认落在仓库 ``.tmp/context-tests``：Windows 沙箱下 ``%TEMP%`` 里的文件
+    SQLite 打不开（目录可写但 create 被拒），所以不能用 ``tempfile.mkdtemp``。
+    ``WP_TEST_TMP`` 可覆盖。
+    """
+    import core.database.connection as connection
+
+    base = os.environ.get("WP_TEST_TMP")
+    root = Path(base) if base else Path(__file__).resolve().parents[3] / ".tmp" / "context-tests"
+    root.mkdir(parents=True, exist_ok=True)
+    db_dir = root / f"db-{uuid.uuid4().hex}"
+    db_dir.mkdir(parents=True, exist_ok=True)
+
+    prev_path, prev_checked = connection.DB_PATH, connection._schema_checked
+    connection.DB_PATH = str(db_dir / "data.db")
+    connection._schema_checked = False
+    try:
+        yield
+    finally:
+        connection.DB_PATH, connection._schema_checked = prev_path, prev_checked
+        shutil.rmtree(db_dir, ignore_errors=True)
+
+
+def _seed_turns(turns: int) -> int:
+    cid = conversations.create_conversation()["id"]
+    conn = get_connection()
+    try:
+        for i in range(turns):
+            conn.execute(
+                "INSERT INTO messages (conversation_id, role, content, turn_id) VALUES (?, 'user', ?, ?)",
+                (cid, f"第{i}轮目标：" + "目" * 30, f"t{i}"),
+            )
+            conn.execute(
+                "INSERT INTO messages (conversation_id, role, content, turn_id) VALUES (?, 'assistant', ?, ?)",
+                (cid, f"回答{i}：" + "答" * 30, f"t{i}"),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return cid
+
+
+def check_maybe_compact_persists_summary_and_audit():
+    """压缩成功：写 conversations.summary + compactions 审计行，之后组装带摘要。"""
+    with _temp_db():
+        cid = _seed_turns(10)
+        rows = conversations.get_conversation_messages(cid)
+        state = compaction.load_state(cid)
+        calls = []
+
+        result = compaction.maybe_compact(
+            cid,
+            rows,
+            state,
+            current_tokens=10**9,
+            summarize=lambda text: (calls.append(text) or "摘要：用户目标 5 年攒 50 万"),
+            force=True,
+        )
+
+        true(result is not None, "应执行压缩")
+        eq(len(calls), 1, "只应调用一次摘要模型")
+        in_("第1轮目标", calls[0], "压缩范围应包含锚点之后的轮次")
+        true("第0轮目标" not in calls[0], "锚点不参与摘要")
+
+        state2 = compaction.load_state(cid)
+        eq(state2["summary"], "摘要：用户目标 5 年攒 50 万")
+        eq(state2["anchor"], rows[0]["id"], "锚点应落库")
+        true(state2["until"] is not None, "覆盖位置应落库")
+
+        conn = get_connection()
+        try:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM compactions WHERE conversation_id = ?", (cid,)
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        eq(count, 1, "应记录一条压缩审计")
+
+        history, info = context.prepare_history(rows, state=state2)
+        true(info["compacted"], "之后组装应走压缩路径")
+        eq(history[0]["content"].startswith("第0轮目标"), True, "锚点仍在最前")
+
+
+def check_maybe_compact_respects_threshold():
+    """未过阈值不压缩（默认 75%）。"""
+    with _temp_db():
+        cid = _seed_turns(10)
+        rows = conversations.get_conversation_messages(cid)
+        result = compaction.maybe_compact(
+            cid, rows, current_tokens=1, summarize=lambda _: "不应被调用"
+        )
+        eq(result, None)
+        eq(compaction.load_state(cid)["summary"], None)
+
+
+def check_maybe_compact_can_be_disabled():
+    """``CONTEXT_COMPACTION=0`` 等价开关：enabled=False 时完全不动作。"""
+    with _temp_db():
+        cid = _seed_turns(10)
+        rows = conversations.get_conversation_messages(cid)
+        result = compaction.maybe_compact(
+            cid, rows, current_tokens=10**9, summarize=lambda _: "x", enabled=False
+        )
+        eq(result, None)
+        eq(compaction.load_state(cid)["summary"], None)
+
+
+def check_second_compaction_needs_new_messages():
+    """没有新消息时第二次压缩应无范围可压（返回 None），不会重复摘要同一段。"""
+    with _temp_db():
+        cid = _seed_turns(10)
+        rows = conversations.get_conversation_messages(cid)
+        compaction.maybe_compact(
+            cid, rows, current_tokens=10**9, summarize=lambda _: "摘要", force=True
+        )
+        state = compaction.load_state(cid)
+        again = compaction.maybe_compact(
+            cid, rows, state, current_tokens=10**9, summarize=lambda _: "再次", force=True
+        )
+        eq(again, None, "没有新消息时不应重复压缩")
+

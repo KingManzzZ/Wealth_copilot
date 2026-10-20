@@ -63,7 +63,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from core import chat_stream
-from core.agent import turn_context
+from core.agent import compaction, turn_context
 from core.agent.cancel import TurnCancel, TurnCancelled
 from core.agent.context import prepare_history
 from core.services.conversations import (
@@ -335,10 +335,38 @@ async def chat(request: Request, payload: ChatRequest):
         # 顺序很重要：先读历史（**不含本轮用户消息**，chat_stream 会自己追加），
         # 再把用户消息落库。这样断流时用户输入不丢。
         rows = await asyncio.to_thread(get_conversation_messages, conversation_id) or []
-        history, info = prepare_history(rows)
+        context_state = await asyncio.to_thread(
+            compaction.load_state, conversation_id
+        )
+        history, info = prepare_history(rows, state=context_state)
+
+        # 压缩只在**轮次边界**发生（就是这里），绝不插进工具循环中间。
+        # 失败只记日志：压缩是优化，不能阻断聊天。
+        if compaction.should_trigger(info["pre_tokens"], info["budget"]):
+            try:
+                compacted = await asyncio.to_thread(
+                    compaction.maybe_compact,
+                    conversation_id,
+                    rows,
+                    context_state,
+                    info["pre_tokens"],
+                    info["budget"],
+                )
+                if compacted:
+                    context_state = await asyncio.to_thread(
+                        compaction.load_state, conversation_id
+                    )
+                    history, info = prepare_history(rows, state=context_state)
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[chat] 会话 {conversation_id} ⚠️ 压缩失败，按未压缩继续："
+                    f"{type(exc).__name__}: {exc}"
+                )
+
         print(
             f"[chat] 会话 {conversation_id} 上下文：行 {info['rows']} "
             f"掩码 {info['masked']} 丢弃单元 {info['dropped_units']} "
+            f"压缩 {'是' if info.get('compacted') else '否'} "
             f"估算 {info['tokens']}/{info['budget']}"
         )
         await asyncio.to_thread(
