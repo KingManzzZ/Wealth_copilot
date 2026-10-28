@@ -3,7 +3,7 @@ Dashboard 接口（路由层）。
 
 聚合各子 service 的数据返回前端仪表盘所需的复合结构。
 KPI 与现金流图全部由 transactions 按月聚合派生（不再有 monthly_cashflow 汇总表），
-health 仍用静态（动态计算待后续迭代）。
+health 由 ``core/services/wealth_health.py`` 实时计算（5 维评分，不落库）。
 """
 
 from fastapi import APIRouter
@@ -12,20 +12,9 @@ from core.services.assets import list_assets
 from core.services.cashflow import list_cashflow, get_latest_month
 from core.services.debts import list_debts
 from core.services.goals import list_goals
+from core.services.wealth_health import get_health
 
 router = APIRouter()
-
-# 健康评分：规则化输出（将来可换成真实算法/LLM 评估）
-HEALTH = {
-    "overall": 0,
-    "grade": "B",
-    "dimensions": [
-        {"name": "储蓄率", "score": 78, "advice": "储蓄率 47%，高于 30% 的健康线，保持。"},
-        {"name": "应急充足度", "score": 65, "advice": "应急资金覆盖 4.4 个月支出，建议补足到 6 个月。"},
-        {"name": "负债比", "score": 70, "advice": "负债/资产 86%，房贷为主，注意利率上行风险。"},
-        {"name": "目标进度", "score": 75, "advice": "测试111"},
-    ],
-}
 
 
 def _build_kpis(latest: dict | None) -> dict:
@@ -61,5 +50,5 @@ def dashboard():
         "cashflow": list_cashflow(months=6),
         "goals": list_goals(),
         "asset_liability": _build_asset_liability(list_assets(), list_debts()),
-        "health": HEALTH,
+        "health": get_health(),
     }
