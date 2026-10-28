@@ -25,10 +25,10 @@
 | GET | `/api/basic_info` | 取当前用户基本信息（未创建时返回默认值） |
 | POST | `/api/basic_info` | UPSERT 基本信息（仅接受白名单字段，整体覆盖） |
 | GET | `/api/assets` | 列出全部资产（`{name: value}` 字典） |
-| POST | `/api/assets` | UPSERT 单条资产 body `{name, value}` |
+| POST | `/api/assets` | UPSERT 单条资产 body `{name, value, asset_type?}` |
 | DELETE | `/api/assets/{name}` | 删除单条资产 |
-| GET | `/api/debts` | 列出全部债务（`{name: {remaining, monthly_payment}}` 字典） |
-| POST | `/api/debts` | UPSERT 单条债务 body `{name, remaining, monthly_payment}` |
+| GET | `/api/debts` | 列出全部债务（`{name: {remaining, monthly_payment, annual_rate}}` 字典） |
+| POST | `/api/debts` | UPSERT 单条债务 body `{name, remaining, monthly_payment, annual_rate?}` |
 | DELETE | `/api/debts/{name}` | 删除单条债务 |
 | GET | `/api/goals` | 列出全部目标（`FinancialGoal[]`） |
 | POST | `/api/goals` | UPSERT 单条目标 body `FinancialGoal`（按 id 查重） |
@@ -75,15 +75,17 @@
 字典结构：键为资产名（中文允许），值为当前估值（元）。
 
 - GET 响应：`{ "现金及活期": 80000, "基金": 30000 }`
-- POST body：`{ "name": "现金", "value": 80000 }` —— UPSERT 语义，同名则更新
+- POST body：`{ "name": "现金", "value": 80000, "asset_type": "cash" }` —— UPSERT 语义，同名则更新
+  - `asset_type` 可选：`cash` / `investment` / `property` / `other`；不传时保留原类型（新记录按名称推断）
 - DELETE `/api/assets/{name}`：路径参数需 URL encode；不存在返回 404
 
 ### 2.4 债务（debts 表）
 
-字典结构：键为债务名，值为对象 `{ remaining, monthly_payment }`。
+字典结构：键为债务名，值为对象 `{ remaining, monthly_payment, annual_rate }`。
 
-- GET 响应：`{ "房贷": { "remaining": 800000, "monthly_payment": 6500 } }`
-- POST body：`{ "name": "房贷", "remaining": 800000, "monthly_payment": 6500 }`
+- GET 响应：`{ "房贷": { "remaining": 800000, "monthly_payment": 6500, "annual_rate": 0.045 } }`
+- POST body：`{ "name": "房贷", "remaining": 800000, "monthly_payment": 6500, "annual_rate": 0.045 }`
+  - `annual_rate` 可选：年利率**小数**（`0.05` = 5%）；不传时保留原值
 - DELETE `/api/debts/{name}`：路径参数需 URL encode
 
 ### 2.5 财富目标（goals 表）
@@ -98,6 +100,7 @@
 | `current` | number | 当前已积累金额（元） | `130000` |
 | `deadline` | string | 截止日期 | `"2031-09-16"` |
 | `priority` | enum | 优先级 `high` / `medium` / `low` | `"high"` |
+| `created_at` | string | 创建时间（健康度算"按时间应达进度"用） | `"2026-04-01 10:00:00"` |
 
 - POST body：完整 `FinancialGoal` 对象，按 `id` UPSERT
 - DELETE `/api/goals/{goal_id}`
@@ -186,9 +189,24 @@
   "cashflow": [...],              // 最近 6 个月的 MonthlyCashflow
   "goals": [...],                 // 全部 FinancialGoal
   "asset_liability": [...],       // 资产+债务合并列表
-  "health": { ... }               // 当前为静态数据，后续接入动态算法
+  "health": {                     // 5 维财务健康度（实时计算，见 services/wealth_health.py）
+    "overall": 69,
+    "grade": "C",
+    "dimensions": [
+      { "name": "储蓄率", "score": 100, "advice": "..." },
+      { "name": "应急储备", "score": 28, "advice": "..." },
+      { "name": "负债健康", "score": 72, "advice": "..." },
+      { "name": "目标进度", "score": 100, "advice": "..." },
+      { "name": "资产配置", "score": 100, "advice": "..." }
+    ],
+    "data_quality": "full"        // full / partial / insufficient
+  }
 }
 ```
+
+`health` 规则：储蓄率 25% + 应急 20% + 负债 25% + 目标 15% + 资产配置 15%；
+缺失维度剔除后重新归一化；低于 40 分的维度每个扣 10 分（上限 30）；
+分级 A≥85 / B≥70 / C≥55 / D<55。详见 `Investigation/财务健康度/01-指标与算法调研.md`。
 
 KPI 派生规则：取**最近一个有流水的月份**，`income` / `expense` 为该月流水按类型求和，`surplus = income - expense`，`saving_rate = surplus / income`（income 为 0 时置 0）。没有任何流水时四项全为 0。
 
@@ -244,9 +262,9 @@ v0.4 起按关系建模拆分，每张表都带 `user_id` 列（INTEGER NOT NULL
 | 表 | 用途 | 关键字段 |
 |---|---|---|
 | `basic_info` | 基本信息，单用户单行 | id, user_id, name, age, city, occupation, ..., risk_tolerance, investing_years, liquidity_needs |
-| `assets` | 资产明细，多行 | id, user_id, name, value |
-| `debts` | 债务明细，多行 | id, user_id, name, remaining, monthly_payment |
-| `goals` | 财富目标，多行 | id, user_id, goal_id, name, target, current, deadline, priority |
+| `assets` | 资产明细，多行 | id, user_id, name, value, asset_type (cash/investment/property/other) |
+| `debts` | 债务明细，多行 | id, user_id, name, remaining, monthly_payment, annual_rate |
+| `goals` | 财富目标，多行 | id, user_id, goal_id, name, target, current, deadline, priority, created_at |
 | `transactions` | 交易流水明细（**收支唯一数据源**） | id, user_id, transaction_type, amount, category, source, occurred_at, note |
 | `conversations` | 对话会话（v0.6 启用） | id, user_id, title, summary, summary_until_message_id, summary_anchor_message_id, status, created_at, updated_at |
 | `messages` | 会话消息（v0.6 启用） | id, conversation_id (CASCADE), role, content, tool_calls, tool_name, turn_id, interrupted, stop_reason, withdrawn, withdrawn_at, created_at |
@@ -279,3 +297,4 @@ UNIQUE 约束：
 | 2026-09-23 | v0.5 | **算法字段隔离**：`risk_tolerance` 更名展示为"风险承受能力"；新增 `investment_preference`（投资偏好）列；`risk_tolerance`/`investment_preference`/`liquidity_needs` 三个字段标记为算法估算，从 `BASIC_INFO_FIELDS` 可写白名单和 `update_basic_info` tool 参数中移除；前端 ProfileCard 实现行内编辑（可编辑字段点击直接修改），三个算法字段只读展示 |
 | 2026-09-24 | v0.6 | **会话持久化（GPT 式多会话）**：启用预留的 conversations/messages 两张表，新增 5 个 RESTful 端点（列表/创建/懒加载消息/批量追加/删除级联）；会话行惰性创建；消息按 UI 结构嵌套存储（assistant.tool_calls 存完整 JSON）；前端 useChat 升级为会话感知，localStorage 仅存当前会话 id，刷新自动恢复，历史下拉支持切换与删除；后端离线时 mock 对话不落库 |
 | 2026-10-18 | v0.7 | **月度现金流改为派生（单一数据源）**：删除 `monthly_cashflow` 表与 `POST /api/cashflow`、下线 `set_monthly_cashflow` 工具；`GET /api/cashflow` 与 dashboard KPI 改为由 `transactions` 按月聚合，`surplus` 永远现算；修复"Agent 记了流水但月结余不变"（BK-27 / G-11）。前端移除从未被调用的 `getCashflow` / `upsertCashflow`。Agent 侧新增「财务数据写入」提示词规则并注入当前日期 |
+| 2026-10-21 | v0.8 | **财务健康度实时计算**：删除 dashboard 里写死的 `HEALTH` 常量，改为 `services/wealth_health.py` 的 5 维评分（储蓄/应急/负债/目标/资产配置）；`assets` 新增 `asset_type`、`debts` 新增 `annual_rate`（幂等迁移）；goals 列表暴露 `created_at`；dashboard `health` 增加 `data_quality`（full/partial/insufficient） |

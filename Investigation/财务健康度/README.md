@@ -3,8 +3,9 @@
 > **目标**：为仪表盘的"财务健康度"卡片建立一套可计算、可解释、可测试的指标与算法。
 > **结论**：MVP 用 5 维（储蓄、应急、负债、目标、资产配置），加权总分 + 短板惩罚 + A/B/C/D 分级。
 >
-> **状态**：调研完成，尚未落地到代码。当前 `backend/api/routes/dashboard.py` 里的 `health`
-> 仍是写死的常量。
+> **状态**：调研完成，**已落地**（2026-10-21）。
+> 实现：`backend/core/services/wealth_health.py` + `backend/api/routes/dashboard.py`；
+> 测试：`backend/tests/health/`（12 条）；说明：[`../../问题文档/财务健康度.md`](../../问题文档/财务健康度.md)。
 
 ## 文档
 

@@ -21,7 +21,7 @@ export function HealthScore({ health }: { health: FinancialHealth }) {
     <Card className="h-full">
       <CardHeader>
         <CardTitle>财务健康度</CardTitle>
-        <CardDescription>基于储蓄、应急、负债、目标四维评估</CardDescription>
+        <CardDescription>基于储蓄、应急、负债、目标、配置五维评估</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="mb-6 flex items-center gap-6">

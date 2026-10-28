@@ -16,13 +16,15 @@ def list_goals(status: str | None = None) -> list:
     """
     if status is None:
         sql = """
-            SELECT goal_id, name, target, current, deadline, priority, status
+            SELECT goal_id, name, target, current, deadline, priority, status,
+                   created_at
             FROM goals WHERE user_id = ? ORDER BY id
         """
         params = (OWNER_ID,)
     else:
         sql = """
-            SELECT goal_id, name, target, current, deadline, priority, status
+            SELECT goal_id, name, target, current, deadline, priority, status,
+                   created_at
             FROM goals WHERE user_id = ? AND status = ? ORDER BY id
         """
         params = (OWNER_ID, status)
@@ -41,6 +43,7 @@ def list_goals(status: str | None = None) -> list:
             "deadline": row["deadline"] or "",
             "priority": row["priority"],
             "status": row["status"],
+            "created_at": row["created_at"],
         }
         for row in rows
     ]

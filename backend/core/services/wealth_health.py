@@ -1,5 +1,5 @@
 """
-财务健康度评分（L5 个维度）。
+财务健康度评分（5 个维度）。
 
 算法依据：``Investigation/财务健康度/01-指标与算法调研.md``。
 
@@ -9,17 +9,16 @@
 | :--- | ---: | :--- |
 | 储蓄率 | 25% | 近 3 个月 ``transactions`` 聚合 |
 | 应急储备 | 20% | 现金类资产 / 月均支出 |
-| 负债健康 | 25% | 月供收入比（DTI）+ 负债资产比 |
-| 目标进度 | 15% | 目标缺口 vs 月结余能力 |
+| 负债健康 | 25% | 月供收入比（DTI）+ 负债资产比 + 高息负债占比 |
+| 目标进度 | 15% | 实际进度 / 按时间应达进度（无 created_at 时退回"缺口 vs 月结余"） |
 | 资产配置 | 15% | 高风险资产占比 vs 风险承受能力 |
 
-## 两个现实约束（不新增 schema 的代价）
+## 数据来源
 
-1. **``assets`` 没有"资产类型"字段**：这里按名称关键词分类
-   （现金/活期/货币/存款 → 现金类；股票/基金/ETF… → 高风险；房/住宅 → 自住房）。
-   关键词是启发式，后续应给 ``assets`` 加 ``asset_type`` 列。
-2. **``goals`` 没有暴露 ``created_at``**：文档里的"按时间应达进度"无法算，
-   MVP 改为"目标月缺口 vs 月结余能力"——同样能回答"这个目标现在可行吗"。
+- ``assets.asset_type``（cash / investment / property / other）——旧数据为 other 时按名称推断；
+- ``debts.annual_rate``（小数）——识别高息负债，未填按"无高息"处理；
+- ``goals.created_at`` + ``deadline``——计算"按时间应达进度"；
+- 其余全部由 ``transactions`` 派生，不落库。
 
 ## 缺失数据
 
@@ -33,7 +32,7 @@ from __future__ import annotations
 from datetime import date
 from statistics import median
 
-from core.services.assets import list_assets
+from core.services.assets import list_asset_details
 from core.services.basic_info import get_basic_info
 from core.services.cashflow import list_cashflow
 from core.services.debts import list_debts
@@ -60,24 +59,8 @@ RISK_TARGETS = {
     "aggressive": 0.60,
 }
 
-#: 资产名称关键词（顺序很重要：先自住房，再现金，最后高风险）
-_PROPERTY_KEYWORDS = ("房", "住宅", "商铺", "物业", "地产")
-_CASH_KEYWORDS = ("现金", "活期", "货币", "余额宝", "零钱", "存款")
-_RISKY_KEYWORDS = (
-    "股票",
-    "基金",
-    "ETF",
-    "指数",
-    "偏股",
-    "混合",
-    "私募",
-    "股权",
-    "加密",
-    "数字资产",
-    "期货",
-    "期权",
-    "证券",
-)
+#: 年利率 ≥ 8% 视为高息负债
+HIGH_INTEREST_RATE = 0.08
 
 #: 低于该分数的维度触发短板惩罚
 WEAK_DIMENSION = 40
@@ -106,28 +89,12 @@ def _linear(value: float, bad: float, good: float) -> float:
     return 100.0 * _clamp01((value - bad) / (good - bad))
 
 
-def _classify_asset(name: str) -> str:
-    """按名称把资产分为 property / cash / risky / other。
-
-    没有 ``asset_type`` 字段时的启发式；误判成本由"保守口径"兜底：
-    现金类只认明确关键词，高风险只认明确关键词，其余归 other。
-    """
-    label = name or ""
-    if any(keyword in label for keyword in _PROPERTY_KEYWORDS):
-        return "property"
-    if any(keyword in label for keyword in _CASH_KEYWORDS):
-        return "cash"
-    if any(keyword in label for keyword in _RISKY_KEYWORDS):
-        return "risky"
-    return "other"
-
-
 def _median_positive(values) -> float | None:
     positives = [_num(v) for v in values if _num(v) > 0]
     return median(positives) if positives else None
 
 
-def _parse_deadline(raw: str | None) -> date | None:
+def _parse_date(raw: str | None) -> date | None:
     if not raw:
         return None
     try:
@@ -184,9 +151,9 @@ def _emergency_dimension(assets: dict, rows) -> dict | None:
         return None
 
     cash = sum(
-        _num(value)
-        for name, value in assets.items()
-        if _classify_asset(name) == "cash"
+        _num(item.get("value"))
+        for item in assets.values()
+        if item.get("asset_type") == "cash"
     )
     months = cash / monthly_expense
     score = int(round(_linear(months, 0.0, 6.0)))
@@ -209,7 +176,7 @@ def _emergency_dimension(assets: dict, rows) -> dict | None:
 
 
 def _debt_dimension(assets: dict, debts: dict, rows) -> dict | None:
-    total_assets = sum(_num(value) for value in assets.values())
+    total_assets = sum(_num(item.get("value")) for item in assets.values())
     total_debt = sum(_num(item.get("remaining")) for item in debts.values())
     monthly_payment = sum(
         _num(item.get("monthly_payment")) for item in debts.values()
@@ -219,6 +186,7 @@ def _debt_dimension(assets: dict, debts: dict, rows) -> dict | None:
     parts: list[tuple[float, float]] = []
     dti = None
     debt_ratio = None
+    high_interest_ratio = 0.0
 
     if monthly_income and monthly_income > 0:
         dti = monthly_payment / monthly_income
@@ -226,6 +194,20 @@ def _debt_dimension(assets: dict, debts: dict, rows) -> dict | None:
     if total_assets > 0:
         debt_ratio = total_debt / total_assets
         parts.append((0.4, _linear(0.70 - debt_ratio, 0.0, 0.50)))
+
+    # 有年利率数据时，把"高息负债占比"作为第三个子项（10% 以下满分，50% 以上 0 分）
+    has_rate = any(item.get("annual_rate") is not None for item in debts.values())
+    if total_debt > 0 and has_rate and parts:
+        high_interest = sum(
+            _num(item.get("remaining"))
+            for item in debts.values()
+            if item.get("annual_rate") is not None
+            and _num(item.get("annual_rate")) >= HIGH_INTEREST_RATE
+        )
+        high_interest_ratio = high_interest / total_debt
+        parts = [(0.5, score) for _, score in parts] + [
+            (0.2, _linear(0.50 - high_interest_ratio, 0.0, 0.40))
+        ]
 
     if not parts:
         return None
@@ -239,6 +221,8 @@ def _debt_dimension(assets: dict, debts: dict, rows) -> dict | None:
         details.append(f"月供占收入 {_percent(dti, 1)}")
     if debt_ratio is not None:
         details.append(f"负债/资产 {_percent(debt_ratio, 1)}")
+    if high_interest_ratio > 0:
+        details.append(f"高息负债占 {_percent(high_interest_ratio, 1)}")
     detail_text = "，".join(details)
 
     if score >= 80:
@@ -251,20 +235,19 @@ def _debt_dimension(assets: dict, debts: dict, rows) -> dict | None:
 
 
 def _goal_dimension(goals: list, rows) -> dict | None:
-    """目标可行性：月结余能力 / 目标所需月储蓄。
+    """目标进度。
 
-    文档里的"按时间应达进度"依赖 ``goals.created_at``，而 service 未暴露它；
-    这里改用"缺口 vs 能力"，避免为了一个字段去改其他模块。
+    优先用文档的"按时间应达进度"（需要 ``created_at``）；
+    老数据没有 created_at 时退回"月结余能力 / 目标所需月储蓄"。
     """
     today = date.today()
-    surpluses = [
-        _num(row["income"]) - _num(row["expense"]) for row in rows
-    ]
+    surpluses = [_num(row["income"]) - _num(row["expense"]) for row in rows]
     capacity = max(0.0, median(surpluses)) if surpluses else 0.0
 
     weighted_score = 0.0
     total_weight = 0.0
-    required_total = 0.0
+    time_notes: list[tuple[str, float, float]] = []
+
     for goal in goals:
         if goal.get("status", "active") != "active":
             continue
@@ -273,16 +256,24 @@ def _goal_dimension(goals: list, rows) -> dict | None:
         if target <= 0:
             continue
 
-        deadline = _parse_deadline(goal.get("deadline"))
-        if current >= target:
-            score = 100.0
-            required = 0.0
-        elif deadline is None:
-            continue  # 没有期限，无法判断可行性
-        elif deadline < today:
+        deadline = _parse_date(goal.get("deadline"))
+        created = _parse_date(goal.get("created_at"))
+        actual = _clamp01(current / target)
+
+        if deadline is not None and created is not None and deadline > created:
+            elapsed = _clamp01((today - created).days / (deadline - created).days)
+            gap = actual - elapsed
+            score = 100.0 * _clamp01(0.5 + 2 * gap)
+            if deadline < today and current < target:
+                score = 20.0
+            time_notes.append((goal.get("name") or "目标", actual, elapsed))
+        elif deadline is not None and deadline < today and current < target:
             score = 20.0
-            required = target - current
+            time_notes.append((goal.get("name") or "目标", actual, 1.0))
         else:
+            # 没有 created_at：退回"缺口 vs 月结余"
+            if deadline is None:
+                continue
             months_left = max(1.0, (deadline - today).days / 30.44)
             required = max(0.0, (target - current) / months_left)
             coverage = capacity / required if required > 0 else 1.0
@@ -290,35 +281,45 @@ def _goal_dimension(goals: list, rows) -> dict | None:
 
         weighted_score += score * target
         total_weight += target
-        required_total += required
 
     if total_weight <= 0:
         return None
 
     score = int(round(weighted_score / total_weight))
-    if score >= 80:
-        advice = (
-            f"月结余 {_money(capacity)}，可覆盖目标所需 {_money(required_total)}/月，在轨。"
+
+    if time_notes:
+        worst_name, worst_actual, worst_elapsed = min(
+            time_notes, key=lambda item: item[1] - item[2]
         )
+        gap = worst_actual - worst_elapsed
+        if gap >= 0.05:
+            advice = (
+                f"{len(time_notes)} 个目标均在轨；最落后的是"
+                f"「{worst_name}」（实际 {_percent(worst_actual)}，"
+                f"应达 {_percent(worst_elapsed)}）。"
+            )
+        else:
+            advice = (
+                f"「{worst_name}」实际进度 {_percent(worst_actual)}，"
+                f"按时间应达 {_percent(worst_elapsed)}，落后 {abs(gap) * 100:.0f} 个百分点；"
+                "可提高月储蓄或延长期限。"
+            )
+    elif score >= 80:
+        advice = f"目标所需月储蓄可由月结余 {_money(capacity)} 覆盖，在轨。"
     elif score >= 50:
-        advice = (
-            f"月结余 {_money(capacity)}，目标需 {_money(required_total)}/月，"
-            "略有缺口，可延长期限或提高储蓄。"
-        )
+        advice = "目标略有缺口，可延长期限或提高储蓄。"
     else:
-        advice = (
-            f"月结余 {_money(capacity)}，目标需 {_money(required_total)}/月，"
-            "缺口较大；建议下调目标或延长截止时间。"
-        )
+        advice = "目标缺口较大；建议下调目标或延长截止时间。"
+
     return {"key": "goal", "name": "目标进度", "score": score, "advice": advice}
 
 
 def _allocation_dimension(assets: dict, info: dict) -> dict | None:
-    total = sum(_num(value) for value in assets.values())
+    total = sum(_num(item.get("value")) for item in assets.values())
     property_value = sum(
-        _num(value)
-        for name, value in assets.items()
-        if _classify_asset(name) == "property"
+        _num(item.get("value"))
+        for item in assets.values()
+        if item.get("asset_type") == "property"
     )
     investable = total - property_value
     if investable <= 0:
@@ -330,9 +331,9 @@ def _allocation_dimension(assets: dict, info: dict) -> dict | None:
         return None
 
     risky = sum(
-        _num(value)
-        for name, value in assets.items()
-        if _classify_asset(name) == "risky"
+        _num(item.get("value"))
+        for item in assets.values()
+        if item.get("asset_type") == "investment"
     )
     ratio = risky / investable
     score = int(round(100.0 * _clamp01(1 - abs(ratio - target) / 0.5)))
@@ -368,7 +369,7 @@ def get_health() -> dict:
     ``{overall, grade, dimensions: [{name, score, advice}]}``；
     额外带 ``data_quality``（full / partial / insufficient），前端可忽略。
     """
-    assets = list_assets()
+    assets = list_asset_details()
     debts = list_debts()
     goals = list_goals(status="active")
     rows = list_cashflow(months=3)

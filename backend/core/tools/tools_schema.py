@@ -71,6 +71,11 @@ TOOLS_SCHEMA = [
                 "properties": {
                     "name": {"type": "string", "description": "资产名称（如'现金及活期'、'基金'、'股票'）"},
                     "value": {"type": "number", "description": "当前估值（元）"},
+                    "asset_type": {
+                        "type": "string",
+                        "enum": ["cash", "investment", "property", "other"],
+                        "description": "可选：cash=现金类 / investment=投资 / property=自住房 / other=其他；不传按名称推断",
+                    },
                 },
                 "required": ["name", "value"],
             },
@@ -86,6 +91,11 @@ TOOLS_SCHEMA = [
                 "properties": {
                     "name": {"type": "string", "description": "资产名称"},
                     "value": {"type": "number", "description": "新的估值（元）"},
+                    "asset_type": {
+                        "type": "string",
+                        "enum": ["cash", "investment", "property", "other"],
+                        "description": "可选：cash=现金类 / investment=投资 / property=自住房 / other=其他；不传保留原类型",
+                    },
                 },
                 "required": ["name", "value"],
             },
@@ -142,6 +152,10 @@ TOOLS_SCHEMA = [
                     "name": {"type": "string", "description": "负债名称（如'房贷'、'车贷'、'信用卡'）"},
                     "remaining": {"type": "number", "description": "剩余本金（元）"},
                     "monthly_payment": {"type": "number", "description": "月还款额（元）"},
+                    "annual_rate": {
+                        "type": "number",
+                        "description": "可选：年利率小数（0.05 = 5%），用于识别高息负债",
+                    },
                 },
                 "required": ["name", "remaining", "monthly_payment"],
             },
@@ -158,6 +172,10 @@ TOOLS_SCHEMA = [
                     "name": {"type": "string", "description": "负债名称"},
                     "remaining": {"type": "number", "description": "新的剩余本金（元）"},
                     "monthly_payment": {"type": "number", "description": "新的月还款额（元）"},
+                    "annual_rate": {
+                        "type": "number",
+                        "description": "可选：年利率小数（0.05 = 5%）；不传保留原值",
+                    },
                 },
                 "required": ["name", "remaining", "monthly_payment"],
             },

@@ -17,20 +17,31 @@ def get_debts() -> dict:
     return list_debts()
 
 
-def record_debt(name: str, remaining: float, monthly_payment: float) -> dict:
+def record_debt(
+    name: str,
+    remaining: float,
+    monthly_payment: float,
+    annual_rate: float | None = None,
+) -> dict:
     """新增负债：同名负债已存在则更新（UPSERT）。
 
     Args:
         name: 负债名称（如"房贷"、"车贷"、"信用卡"）
         remaining: 剩余本金（元）
         monthly_payment: 月还款额（元）
+        annual_rate: 可选，年利率小数（0.05 = 5%）
 
     Returns:
-        {"name": ..., "remaining": ..., "monthly_payment": ...}
+        {"name": ..., "remaining": ..., "monthly_payment": ..., "annual_rate": ...}
     """
-    return upsert_debt(name, remaining, monthly_payment)
+    return upsert_debt(name, remaining, monthly_payment, annual_rate)
 
 
-def update_debt(name: str, remaining: float, monthly_payment: float) -> dict:
+def update_debt(
+    name: str,
+    remaining: float,
+    monthly_payment: float,
+    annual_rate: float | None = None,
+) -> dict:
     """更新负债余额或月还款；语义上与 record_debt 等价（底层都是 UPSERT）。"""
-    return upsert_debt(name, remaining, monthly_payment)
+    return upsert_debt(name, remaining, monthly_payment, annual_rate)

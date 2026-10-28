@@ -27,22 +27,23 @@ def get_assets() -> dict:
     return list_assets()
 
 
-def record_asset(name: str, value: float) -> dict:
+def record_asset(name: str, value: float, asset_type: str = "") -> dict:
     """新增资产：同名资产已存在则更新估值（UPSERT）。
 
     Args:
         name: 资产名称（如"现金及活期"、"基金"、"股票"）
         value: 当前估值（元）
+        asset_type: 可选，cash/investment/property/other；不传则按名称推断
 
     Returns:
-        {"name": ..., "value": ...}
+        {"name": ..., "value": ..., "asset_type": ...}
     """
-    return upsert_asset(name, value)
+    return upsert_asset(name, value, asset_type=(asset_type or None))
 
 
-def update_asset(name: str, value: float) -> dict:
+def update_asset(name: str, value: float, asset_type: str = "") -> dict:
     """更新资产估值；语义上与 record_asset 等价（底层都是 UPSERT）。"""
-    return upsert_asset(name, value)
+    return upsert_asset(name, value, asset_type=(asset_type or None))
 
 
 def calculate_net_worth() -> dict:

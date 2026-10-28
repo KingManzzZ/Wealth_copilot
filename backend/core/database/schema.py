@@ -51,6 +51,8 @@ SCHEMA_SQL: str = """
             user_id     INTEGER NOT NULL DEFAULT 1,
             name        TEXT    NOT NULL,
             value       NUMERIC NOT NULL DEFAULT 0,
+            -- cash | investment | property | other（健康度用它区分现金/自住房/高风险）
+            asset_type  TEXT    NOT NULL DEFAULT 'other',
             created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
             updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
             UNIQUE(user_id, name)
@@ -68,6 +70,8 @@ SCHEMA_SQL: str = """
             name             TEXT    NOT NULL,
             remaining        NUMERIC NOT NULL DEFAULT 0,
             monthly_payment  NUMERIC NOT NULL DEFAULT 0,
+            -- 年利率（小数，如 0.05 = 5%）；NULL = 未填，健康度按"无高息"处理
+            annual_rate      REAL,
             created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
             updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
             UNIQUE(user_id, name)
@@ -268,6 +272,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
     _ensure_message_columns(conn)
     _ensure_conversation_columns(conn)
+    _ensure_asset_columns(conn)
+    _ensure_debt_columns(conn)
     _drop_legacy_cashflow(conn)
     conn.commit()
 
@@ -287,6 +293,32 @@ def _ensure_conversation_columns(conn: sqlite3.Connection) -> None:
         if column not in existing:
             conn.execute(f"ALTER TABLE conversations ADD COLUMN {column} {ddl}")
             print(f"[schema] conversations 表已补列：{column}")
+
+
+def _ensure_asset_columns(conn: sqlite3.Connection) -> None:
+    """给旧库的 assets 补 ``asset_type``（幂等）。"""
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(assets)")}
+    except sqlite3.OperationalError:
+        return
+
+    if "asset_type" not in existing:
+        conn.execute(
+            "ALTER TABLE assets ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'other'"
+        )
+        print("[schema] assets 表已补列：asset_type")
+
+
+def _ensure_debt_columns(conn: sqlite3.Connection) -> None:
+    """给旧库的 debts 补 ``annual_rate``（幂等）。"""
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(debts)")}
+    except sqlite3.OperationalError:
+        return
+
+    if "annual_rate" not in existing:
+        conn.execute("ALTER TABLE debts ADD COLUMN annual_rate REAL")
+        print("[schema] debts 表已补列：annual_rate")
 
 
 def _ensure_message_columns(conn: sqlite3.Connection) -> None:

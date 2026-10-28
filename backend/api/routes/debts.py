@@ -21,7 +21,7 @@ def read_debts():
 
 @router.post("/debts")
 def upsert_debt_endpoint(data: dict = Body(...)):
-    """UPSERT 单条债务：同名则更新。"""
+    """UPSERT 单条债务：同名则更新（可选 annual_rate）。"""
     name = data.get("name")
     remaining = data.get("remaining")
     monthly_payment = data.get("monthly_payment")
@@ -30,7 +30,12 @@ def upsert_debt_endpoint(data: dict = Body(...)):
             status_code=400,
             detail="name、remaining、monthly_payment 必填",
         )
-    return upsert_debt(name, float(remaining), float(monthly_payment))
+    return upsert_debt(
+        name,
+        float(remaining),
+        float(monthly_payment),
+        data.get("annual_rate"),
+    )
 
 
 @router.delete("/debts/{name}")

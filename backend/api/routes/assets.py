@@ -21,12 +21,12 @@ def read_assets():
 
 @router.post("/assets")
 def upsert_asset_endpoint(data: dict = Body(...)):
-    """UPSERT 单条资产：同名则更新 value。"""
+    """UPSERT 单条资产：同名则更新 value（可选 asset_type）。"""
     name = data.get("name")
     value = data.get("value")
     if not name or value is None:
         raise HTTPException(status_code=400, detail="name 和 value 必填")
-    return upsert_asset(name, float(value))
+    return upsert_asset(name, float(value), data.get("asset_type") or None)
 
 
 @router.delete("/assets/{name}")
