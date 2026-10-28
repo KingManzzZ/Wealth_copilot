@@ -207,6 +207,27 @@ export interface FinancialHealth {
   dimensions: HealthDimension[]
 }
 
+/** 详情抽屉里的单项指标（原始值 / 目标 / 状态） */
+export interface HealthMetric {
+  label: string
+  value: string
+  target: string
+  status: "good" | "warn" | "bad"
+  note?: string
+}
+
+/** 详情抽屉里的维度（比卡片多 metrics 与 key） */
+export interface HealthDetailDimension extends HealthDimension {
+  key?: string
+  metrics: HealthMetric[]
+}
+
+export interface HealthDetail extends FinancialHealth {
+  dimensions: HealthDetailDimension[]
+  data_quality?: "full" | "partial" | "insufficient"
+  generated_at?: string
+}
+
 export interface DashboardData {
   kpis: FinancialKPIs
   cashflow: CashflowPoint[]

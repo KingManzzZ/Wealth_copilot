@@ -12,7 +12,7 @@ from core.services.assets import list_assets
 from core.services.cashflow import list_cashflow, get_latest_month
 from core.services.debts import list_debts
 from core.services.goals import list_goals
-from core.services.wealth_health import get_health
+from core.services.wealth_health import get_health, get_health_detail
 
 router = APIRouter()
 
@@ -52,3 +52,9 @@ def dashboard():
         "asset_liability": _build_asset_liability(list_assets(), list_debts()),
         "health": get_health(),
     }
+
+
+@router.get("/dashboard/health-detail")
+def dashboard_health_detail():
+    """健康度详情：每个维度的原始值 / 目标 / 状态，供前端详情抽屉。"""
+    return get_health_detail()

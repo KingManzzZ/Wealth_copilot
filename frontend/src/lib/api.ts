@@ -8,6 +8,7 @@ import type {
   DashboardData,
   Debts,
   FinancialGoal,
+  HealthDetail,
   HistoryMessage,
   StoredMessage,
   Transaction,
@@ -251,6 +252,19 @@ export async function refetchDashboard(): Promise<DashboardData | null> {
     const res = await fetch(`${API_BASE}/dashboard`)
     if (!res.ok) return null
     return (await res.json()) as DashboardData
+  } catch {
+    return null
+  }
+}
+
+/** 健康度详情（原始值/目标/状态）；失败/离线返回 null，由抽屉显示错误 */
+export async function getHealthDetail(): Promise<HealthDetail | null> {
+  const online = await detectBackendStatus()
+  if (online === "offline") return null
+  try {
+    const res = await fetch(`${API_BASE}/dashboard/health-detail`)
+    if (!res.ok) return null
+    return (await res.json()) as HealthDetail
   } catch {
     return null
   }

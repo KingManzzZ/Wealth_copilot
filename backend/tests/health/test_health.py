@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import _support
-from run_tests import close, eq, in_, true
+from run_tests import close, eq, in_, not_in, true
 
 from core.services.assets import list_asset_details, upsert_asset
 from core.services.debts import list_debts, upsert_debt
 from core.services.goals import upsert_goal
 from core.services.transactions import add_transaction
-from core.services.wealth_health import _grade, get_health
+from core.services.wealth_health import _grade, get_health, get_health_detail
 
 
 def _dims(result: dict) -> dict:
@@ -183,6 +183,36 @@ def check_annual_rate_preserved_on_update():
         upsert_debt("信用卡", 10000, 1000, 0.18)
         upsert_debt("信用卡", 9000, 900)  # 不传利率
         eq(list_debts()["信用卡"]["annual_rate"], 0.18, "不传利率时应保留原值")
+
+
+def check_detail_has_metrics():
+    """详情接口：每维带原始值/目标/状态；主接口不带 metrics。"""
+    with _support.temp_database():
+        _support.set_risk_tolerance("balanced")
+        upsert_asset("现金", 60000, "cash")
+        upsert_asset("股票", 40000, "investment")
+        _support.add_month(20000, 12000)
+        _support.add_goal(
+            "首付",
+            300000,
+            120000,
+            date.today() + timedelta(days=365),
+            created_at=date.today() - timedelta(days=180),
+        )
+
+        detail = get_health_detail()
+        true("generated_at" in detail)
+        eq(len(detail["dimensions"]), 5)
+        for item in detail["dimensions"]:
+            true(bool(item.get("metrics")), f"{item['name']} 缺 metrics")
+            for metric in item["metrics"]:
+                for key in ("label", "value", "target", "status"):
+                    in_(key, metric, f"{item['name']} metric 缺 {key}")
+                in_(metric["status"], ("good", "warn", "bad"))
+
+        plain = get_health()
+        for item in plain["dimensions"]:
+            not_in("metrics", item, "主接口不应带 metrics")
 
 
 def check_grade_boundaries():

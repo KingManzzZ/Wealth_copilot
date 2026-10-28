@@ -38,7 +38,8 @@
 | GET | `/api/transactions?month=YYYY-MM` | 取交易流水（可按月过滤） |
 | POST | `/api/transactions` | 新增单条交易流水 |
 | DELETE | `/api/transactions/{id}` | 删除单条交易 |
-| GET | `/api/dashboard` | 仪表盘聚合数据（KPI/现金流/目标/资产负债派生） |
+| GET | `/api/dashboard` | 仪表盘聚合数据（KPI/现金流/目标/资产负债派生 + 5 维健康度） |
+| GET | `/api/dashboard/health-detail` | 健康度详情：每维原始值/目标/状态（供前端抽屉） |
 | GET | `/api/conversations` | 会话列表（历史记录，按 updated_at 倒序） |
 | POST | `/api/conversations` | 创建会话（首条消息发出时惰性调用） |
 | GET | `/api/conversations/{id}/messages` | 懒加载某会话全部消息 |
@@ -207,6 +208,36 @@
 `health` 规则：储蓄率 25% + 应急 20% + 负债 25% + 目标 15% + 资产配置 15%；
 缺失维度剔除后重新归一化；低于 40 分的维度每个扣 10 分（上限 30）；
 分级 A≥85 / B≥70 / C≥55 / D<55。详见 `Investigation/财务健康度/01-指标与算法调研.md`。
+
+**`GET /api/dashboard/health-detail`**：结构同 `health`，但每个维度多一个 `metrics`：
+
+```json
+{
+  "overall": 69,
+  "grade": "C",
+  "data_quality": "full",
+  "generated_at": "2026-10-28T22:25:15",
+  "dimensions": [
+    {
+      "key": "emergency",
+      "name": "应急储备",
+      "score": 28,
+      "advice": "...",
+      "metrics": [
+        {
+          "label": "现金类资产可覆盖",
+          "value": "1.7 个月",
+          "target": "≥ 6 个月",
+          "status": "bad",
+          "note": "现金类 6.0 万 ÷ 月支出 3.6 万"
+        }
+      ]
+    }
+  ]
+}
+```
+
+`status` 取值 `good` / `warn` / `bad`，只用于前端颜色；`/api/dashboard` 不返回 `metrics`。
 
 KPI 派生规则：取**最近一个有流水的月份**，`income` / `expense` 为该月流水按类型求和，`surplus = income - expense`，`saving_rate = surplus / income`（income 为 0 时置 0）。没有任何流水时四项全为 0。
 

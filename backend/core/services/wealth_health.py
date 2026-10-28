@@ -29,7 +29,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from statistics import median
 
 from core.services.assets import list_asset_details
@@ -120,6 +120,17 @@ def _grade(overall: int) -> str:
     return "D"
 
 
+def _status(value: float, good: float, warn: float, higher_is_better: bool = True) -> str:
+    """把原始值映射成 good/warn/bad（用于详情页的颜色）。"""
+    if higher_is_better:
+        if value >= good:
+            return "good"
+        return "warn" if value >= warn else "bad"
+    if value <= good:
+        return "good"
+    return "warn" if value <= warn else "bad"
+
+
 # ---------------------------------------------------------------------------
 # 各维度
 # ---------------------------------------------------------------------------
@@ -142,7 +153,20 @@ def _saving_dimension(rows) -> dict | None:
         advice = f"储蓄率 {_percent(rate, 1)}，接近 20% 目标，可再压一点可选支出。"
     else:
         advice = f"储蓄率 {_percent(rate, 1)}，偏低；建议每月先存收入的 20% 再消费。"
-    return {"key": "saving", "name": "储蓄率", "score": score, "advice": advice}
+    return {
+        "key": "saving",
+        "name": "储蓄率",
+        "score": score,
+        "advice": advice,
+        "metrics": [
+            {
+                "label": "近 3 个月平均储蓄率",
+                "value": _percent(rate, 1),
+                "target": "≥ 20%",
+                "status": _status(rate, 0.20, 0.10),
+            }
+        ],
+    }
 
 
 def _emergency_dimension(assets: dict, rows) -> dict | None:
@@ -172,6 +196,15 @@ def _emergency_dimension(assets: dict, rows) -> dict | None:
         "name": "应急储备",
         "score": score,
         "advice": advice,
+        "metrics": [
+            {
+                "label": "现金类资产可覆盖",
+                "value": f"{months:.1f} 个月",
+                "target": "≥ 6 个月",
+                "status": _status(months, 6.0, 3.0),
+                "note": f"现金类 {_money(cash)} ÷ 月支出 {_money(monthly_expense)}",
+            }
+        ],
     }
 
 
@@ -231,7 +264,44 @@ def _debt_dimension(assets: dict, debts: dict, rows) -> dict | None:
         advice = f"{detail_text}，接近警戒线，优先偿还高息负债。"
     else:
         advice = f"{detail_text}，偏高；建议先降月供或增加收入。"
-    return {"key": "debt", "name": "负债健康", "score": score, "advice": advice}
+
+    metrics = []
+    if dti is not None:
+        metrics.append(
+            {
+                "label": "月供 / 月收入（DTI）",
+                "value": _percent(dti, 1),
+                "target": "≤ 28%（≤ 36% 可接受）",
+                "status": _status(dti, 0.28, 0.36, higher_is_better=False),
+            }
+        )
+    if debt_ratio is not None:
+        metrics.append(
+            {
+                "label": "总负债 / 总资产",
+                "value": _percent(debt_ratio, 1),
+                "target": "≤ 50%",
+                "status": _status(debt_ratio, 0.50, 0.70, higher_is_better=False),
+            }
+        )
+    if total_debt > 0 and has_rate:
+        metrics.append(
+            {
+                "label": "高息负债（年利率 ≥ 8%）占比",
+                "value": _percent(high_interest_ratio, 1),
+                "target": "≤ 10%",
+                "status": _status(
+                    high_interest_ratio, 0.10, 0.30, higher_is_better=False
+                ),
+            }
+        )
+    return {
+        "key": "debt",
+        "name": "负债健康",
+        "score": score,
+        "advice": advice,
+        "metrics": metrics,
+    }
 
 
 def _goal_dimension(goals: list, rows) -> dict | None:
@@ -246,7 +316,8 @@ def _goal_dimension(goals: list, rows) -> dict | None:
 
     weighted_score = 0.0
     total_weight = 0.0
-    time_notes: list[tuple[str, float, float]] = []
+    time_notes: list[tuple[str, float, float, float, float]] = []
+    required_total = 0.0
 
     for goal in goals:
         if goal.get("status", "active") != "active":
@@ -266,16 +337,21 @@ def _goal_dimension(goals: list, rows) -> dict | None:
             score = 100.0 * _clamp01(0.5 + 2 * gap)
             if deadline < today and current < target:
                 score = 20.0
-            time_notes.append((goal.get("name") or "目标", actual, elapsed))
+            time_notes.append(
+                (goal.get("name") or "目标", actual, elapsed, current, target)
+            )
         elif deadline is not None and deadline < today and current < target:
             score = 20.0
-            time_notes.append((goal.get("name") or "目标", actual, 1.0))
+            time_notes.append(
+                (goal.get("name") or "目标", actual, 1.0, current, target)
+            )
         else:
             # 没有 created_at：退回"缺口 vs 月结余"
             if deadline is None:
                 continue
             months_left = max(1.0, (deadline - today).days / 30.44)
             required = max(0.0, (target - current) / months_left)
+            required_total += required
             coverage = capacity / required if required > 0 else 1.0
             score = _linear(coverage, 0.0, 1.0)
 
@@ -288,7 +364,7 @@ def _goal_dimension(goals: list, rows) -> dict | None:
     score = int(round(weighted_score / total_weight))
 
     if time_notes:
-        worst_name, worst_actual, worst_elapsed = min(
+        worst_name, worst_actual, worst_elapsed, worst_current, worst_target = min(
             time_notes, key=lambda item: item[1] - item[2]
         )
         gap = worst_actual - worst_elapsed
@@ -304,14 +380,53 @@ def _goal_dimension(goals: list, rows) -> dict | None:
                 f"按时间应达 {_percent(worst_elapsed)}，落后 {abs(gap) * 100:.0f} 个百分点；"
                 "可提高月储蓄或延长期限。"
             )
+        metrics = [
+            {
+                "label": f"「{worst_name}」实际进度",
+                "value": _percent(worst_actual),
+                "target": f"≥ {_percent(worst_elapsed)}（按时间应达）",
+                "status": _status(gap, 0.0, -0.10),
+                "note": f"已存 {_money(worst_current)} / 目标 {_money(worst_target)}",
+            }
+        ]
     elif score >= 80:
         advice = f"目标所需月储蓄可由月结余 {_money(capacity)} 覆盖，在轨。"
+        metrics = [
+            {
+                "label": "月结余能力",
+                "value": f"{_money(capacity)}/月",
+                "target": f"需 {_money(required_total)}/月",
+                "status": "good",
+            }
+        ]
     elif score >= 50:
         advice = "目标略有缺口，可延长期限或提高储蓄。"
+        metrics = [
+            {
+                "label": "月结余能力",
+                "value": f"{_money(capacity)}/月",
+                "target": f"需 {_money(required_total)}/月",
+                "status": "warn",
+            }
+        ]
     else:
         advice = "目标缺口较大；建议下调目标或延长截止时间。"
+        metrics = [
+            {
+                "label": "月结余能力",
+                "value": f"{_money(capacity)}/月",
+                "target": f"需 {_money(required_total)}/月",
+                "status": "bad",
+            }
+        ]
 
-    return {"key": "goal", "name": "目标进度", "score": score, "advice": advice}
+    return {
+        "key": "goal",
+        "name": "目标进度",
+        "score": score,
+        "advice": advice,
+        "metrics": metrics,
+    }
 
 
 def _allocation_dimension(assets: dict, info: dict) -> dict | None:
@@ -354,6 +469,15 @@ def _allocation_dimension(assets: dict, info: dict) -> dict | None:
         "name": "资产配置",
         "score": score,
         "advice": advice,
+        "metrics": [
+            {
+                "label": "高风险资产 / 可投资资产",
+                "value": _percent(ratio),
+                "target": f"{label}目标 {_percent(target)}",
+                "status": _status(score / 100, 0.75, 0.50),
+                "note": f"高风险 {_money(risky)} / 可投资 {_money(investable)}",
+            }
+        ],
     }
 
 
@@ -362,12 +486,15 @@ def _allocation_dimension(assets: dict, info: dict) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def get_health() -> dict:
+def get_health(include_metrics: bool = False) -> dict:
     """计算当前用户的财务健康度（供 ``/api/dashboard`` 使用）。
 
     返回契约与前端 ``FinancialHealth`` 一致：
     ``{overall, grade, dimensions: [{name, score, advice}]}``；
     额外带 ``data_quality``（full / partial / insufficient），前端可忽略。
+
+    ``include_metrics=True`` 时每个维度额外带 ``metrics``（原始值 / 目标 / 状态），
+    供详情抽屉使用；``/api/dashboard`` 默认不返回，避免把卡片接口撑大。
     """
     assets = list_asset_details()
     debts = list_debts()
@@ -395,6 +522,14 @@ def get_health() -> dict:
             "data_quality": "insufficient",
         }
 
+    if include_metrics:
+        public_dimensions = dimensions
+    else:
+        public_dimensions = [
+            {key: value for key, value in item.items() if key != "metrics"}
+            for item in dimensions
+        ]
+
     total_weight = sum(WEIGHTS[item["key"]] for item in dimensions)
     weighted = (
         sum(item["score"] * WEIGHTS[item["key"]] for item in dimensions)
@@ -414,6 +549,13 @@ def get_health() -> dict:
     return {
         "overall": overall,
         "grade": _grade(overall),
-        "dimensions": dimensions,
+        "dimensions": public_dimensions,
         "data_quality": data_quality,
     }
+
+
+def get_health_detail() -> dict:
+    """健康度详情：``get_health(include_metrics=True)`` + ``generated_at``。"""
+    result = get_health(include_metrics=True)
+    result["generated_at"] = datetime.now().isoformat(timespec="seconds")
+    return result

@@ -8,11 +8,13 @@ import { CashflowChart } from "./cashflow-chart"
 import { GoalsProgress } from "./goals-progress"
 import { AssetLiability } from "./asset-liability"
 import { HealthScore } from "./health-score"
+import { HealthDetailDrawer } from "./health-detail-drawer"
 import { Button } from "@/components/ui/button"
 
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [healthDetailOpen, setHealthDetailOpen] = useState(false)
 
   // 首次挂载与「重试」：保留 mock 兜底（离线时演示仍有数据可看）
   const load = useCallback(() => {
@@ -52,7 +54,10 @@ export function Dashboard() {
             <CashflowChart data={data.cashflow} />
           </div>
           <div className="lg:col-span-5">
-            <HealthScore health={data.health} />
+            <HealthScore
+              health={data.health}
+              onOpenDetail={() => setHealthDetailOpen(true)}
+            />
           </div>
           <div className="lg:col-span-5">
             <GoalsProgress goals={data.goals} />
@@ -62,6 +67,11 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      <HealthDetailDrawer
+        open={healthDetailOpen}
+        onClose={() => setHealthDetailOpen(false)}
+      />
     </div>
   )
 }

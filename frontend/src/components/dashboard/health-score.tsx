@@ -1,4 +1,5 @@
 import { motion } from "framer-motion"
+import { ChevronRight } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -6,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import type { FinancialHealth } from "@/types"
 
@@ -16,7 +18,14 @@ const gradeColor: Record<FinancialHealth["grade"], string> = {
   D: "text-destructive",
 }
 
-export function HealthScore({ health }: { health: FinancialHealth }) {
+export function HealthScore({
+  health,
+  onOpenDetail,
+}: {
+  health: FinancialHealth
+  /** 打开详情抽屉；不传则卡片只读 */
+  onOpenDetail?: () => void
+}) {
   return (
     <Card className="h-full">
       <CardHeader>
@@ -59,6 +68,18 @@ export function HealthScore({ health }: { health: FinancialHealth }) {
             </div>
           ))}
         </div>
+
+        {onOpenDetail && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-4 w-full justify-between px-2 text-[11px] text-muted-foreground"
+            onClick={onOpenDetail}
+          >
+            查看各项原始数据
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </CardContent>
     </Card>
   )
